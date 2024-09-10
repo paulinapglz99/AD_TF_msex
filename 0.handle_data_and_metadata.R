@@ -544,8 +544,4 @@ ggsave(filename = "proportions_diagnosis.png", plot = grid,
       dpi = 300
       )
 
-<<<<<<< HEAD
 #END
-=======
-#END
->>>>>>> origin/main

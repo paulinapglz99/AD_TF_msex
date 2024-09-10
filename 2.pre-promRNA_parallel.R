@@ -28,7 +28,6 @@ counts <- readRDS(counts)
 # Read metadata
 metadata <- vroom(metadata)
 
-
 #Seed --- ---
 
 set.seed(10)
@@ -154,6 +153,8 @@ dim(counts)
 
 #Counts
 
+#metadata <- metadata[!(metadata$specimenID %in% c("hB_RNA_10892_resequenced", "hB_RNA_10892_K77C014")), ]
+
 counts <- counts %>% dplyr::select(1, all_of(metadata$specimenID))
 dim(counts)
 
@@ -163,7 +164,7 @@ counts <- counts %>% column_to_rownames(var = "feature")
 
 #I do this to make sure the rowlength of factors match with the counts columns, it is like metadata filtering
 
-cat("set factors")
+cat("set factors\n")
 
 factors <- data.frame("specimenID" = colnames(counts))   
 
@@ -298,7 +299,7 @@ myGCcontent <- dat(noiseqData,
 cat("GC bias original plot")
 png("GCbiasOri.png",width=1000)
 explo.plot(myGCcontent,
-           samples = 1:12,   
+           samples = 1:20,   
            toplot = "global")
 dev.off()
 
@@ -317,7 +318,7 @@ mylengthbias <- dat(noiseqData,
 cat("Length bias original plot\n")
 png("lengthbiasOri.png", width=1000)
 explo.plot(mylengthbias, 
-           samples = 1:12, 
+           samples = 1:20, 
            toplot = "global")
 dev.off()
 
@@ -458,7 +459,7 @@ cat("Counts final plot")
 png("CountsFinal.png")
 explo.plot(mycountsbio_final,
            plottype = "boxplot",
-           samples = 1:15)
+           samples = 1:20)
 dev.off()
 
 #Low counts 
@@ -477,7 +478,7 @@ explo.plot(mycd_lessbias,
 dev.off()
 
 #calculate final GC bias
-cat("GC content final")
+cat("GC content final\n")
 myGCcontent_final <- dat(noiseqData_final,
                          k = 0, 
                          type = "GCbias", 
@@ -486,7 +487,7 @@ myGCcontent_final <- dat(noiseqData_final,
 
 #Plot final GC bias
 
-cat("GC bias final plot")
+cat("GC bias final plot\n")
 png("GCbiasFinal.png",width=1000)
 explo.plot(myGCcontent_final, 
            samples = 1:12, 
@@ -494,7 +495,7 @@ explo.plot(myGCcontent_final,
 dev.off()
 
 #calculate final length bias
-cat("Length bias final")
+cat("Length bias final\n")
 mylenBias <- dat(noiseqData_final, 
                  k = 0, 
                  type = "lengthbias", 
@@ -502,13 +503,13 @@ mylenBias <- dat(noiseqData_final,
                  norm=T)
 
 #Plot final length bias
-cat("Length bias final plot")
+cat("Length bias final plot\n")
 png("lengthbiasFinal.png",width=1000)
 explo.plot(mylenBias, samples = 1:12)
 dev.off()
 
 #Final count matrix --- ---
-cat("Final counts matrix...")
+cat("Final counts matrix...\n")
 final_counts <- lessbatch
 dim(final_counts)
 
