@@ -37,7 +37,7 @@ convert_ens_to_symbol <- function(ensembl_ids) {
 
 # Function to delete duplicates
 del_dupl <- function(counts) {
-  repeated_values <- counts %>%
+    repeated_values <- counts %>%
     group_by(feature) %>%
     filter(n() > 1) %>%
     distinct(feature) %>%
@@ -96,21 +96,120 @@ run_deseq <- function(counts, metadata, condition_column) {
                                 design = as.formula(paste("~ sequencingBatch +", condition_column)))  
   dds <- DESeq(dds)
   
+  return(list(dds = dds, 
+              coldata = coldata))
+}
+
+#Extract DEGS
+
+extract_DEGS <- function(dds, condition_column, coldata){
+  
   res <- results(dds, contrast = c(condition_column, "1", "4"), #condition, problem, control 
                  pAdjustMethod = 'BH', alpha = 0.05)
   res.df <- res %>% as.data.frame() %>% filter(!is.na(padj))
   
-  return(list(dds = dds, res = res.df))
+  # add a column of NAs
+  res.df$diffexpressed <- "NO"
+  # if log2Foldchange > 0.5 and pvalue < 0.05, set as "UP" 
+  res.df$diffexpressed[res.df$log2FoldChange > 0.5 & res.df$padj < 0.05] <- "UP"
+  # if log2Foldchange < -0.5 and pvalue < 0.05, set as "DOWN"
+  res.df$diffexpressed[res.df$log2FoldChange < -0.5 & res.df$padj < 0.05] <- "DOWN"
+  
+  #Add gene names in SYMBOL --- ---
+  
+  #Create dictionary
+  symbol <- convert_ens_to_symbol(rownames(res))
+  
+  # Make rownames columns
+  res.df <- res.df %>% mutate(ensembl_gene_id = rownames(.), .before = 1) 
+  res.df <- res.df %>% left_join(symbol, by = "ensembl_gene_id") #merge
+  
+  # BaseMean by condition --- ---
+  
+  #Extract counts normalized 
+  
+  normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
+  
+  # Calcula los valores de baseMean por condición
+  baseMean_4 <- rowMeans(normcounts[, coldata$ceradsc == "4"]) %>% as.data.frame()
+  colnames(baseMean_4) <- "baseMean_ceradsc_4"
+  
+  baseMean_1 <- rowMeans(normcounts[, coldata$ceradsc == "1"])%>% as.data.frame()
+  colnames(baseMean_1) <- "baseMean_ceradsc_1"
+  
+  baseMean_genes <- cbind(baseMean_4, baseMean_1)
+  baseMean_genes <- baseMean_genes %>% rownames_to_column(var = "feature")
+  
+  #DEGS are...
+  DEGS <- res.df %>% filter(diffexpressed != "NO")
+  dim(DEGS)
+  
+  baseMean_DEGS <- baseMean_genes %>% filter(feature %in% DEGS$ensembl_gene_id)
+  DEGS <-  DEGS %>% left_join(baseMean_DEGS, by = c("ensembl_gene_id" = "feature"))
+  
+  
+  return(list(res.df = res.df, DEGS = DEGS, normcounts = normcounts))
+  
 }
+
+
+extract_DEGS <- function(dds, condition_column, coldata){
+  
+  res <- results(dds, contrast = c(condition_column, "1", "4"), #condition, problem, control 
+                 pAdjustMethod = 'BH', alpha = 0.05)
+  res.df <- res %>% as.data.frame() %>% filter(!is.na(padj))
+  
+  # add a column of NAs
+  res.df$diffexpressed <- "NO"
+  # if log2Foldchange > 0.5 and pvalue < 0.05, set as "UP" 
+  res.df$diffexpressed[res.df$log2FoldChange > 0.5 & res.df$padj < 0.05] <- "UP"
+  # if log2Foldchange < -0.5 and pvalue < 0.05, set as "DOWN"
+  res.df$diffexpressed[res.df$log2FoldChange < -0.5 & res.df$padj < 0.05] <- "DOWN"
+  
+  # Add gene names in SYMBOL --- ---
+  # Create dictionary
+  symbol <- convert_ens_to_symbol(rownames(res))
+  
+  # Make rownames columns
+  res.df <- res.df %>% mutate(ensembl_gene_id = rownames(.), .before = 1) 
+  res.df <- res.df %>% left_join(symbol, by = "ensembl_gene_id") #merge
+  
+  # BaseMean by condition --- ---
+  # Extract counts normalized 
+  normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
+  
+  # Calcula los valores de baseMean por condición
+  baseMean_4 <- rowMeans(normcounts[, coldata$ceradsc == "4"]) %>% as.data.frame()
+  colnames(baseMean_4) <- "baseMean_ceradsc_4"
+  
+  baseMean_1 <- rowMeans(normcounts[, coldata$ceradsc == "1"]) %>% as.data.frame()
+  colnames(baseMean_1) <- "baseMean_ceradsc_1"
+  
+  baseMean_genes <- cbind(baseMean_4, baseMean_1)
+  baseMean_genes <- baseMean_genes %>% rownames_to_column(var = "feature")
+  
+  # DEGs are...
+  DEGS <- res.df %>% filter(diffexpressed != "NO")
+  dim(DEGS)
+  
+  baseMean_DEGS <- baseMean_genes %>% filter(feature %in% DEGS$ensembl_gene_id)
+  DEGS <-  DEGS %>% left_join(baseMean_DEGS, by = c("ensembl_gene_id" = "feature"))
+  
+  # Add delabel column with gene names for DEGs
+  DEGS <- DEGS %>% mutate(delabel = external_gene_name)
+  
+  # For non-DEGs, delabel will be NA or empty
+  res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
+  
+  return(list(res.df = res.df, DEGS = DEGS, normcounts = normcounts))
+  
+}
+
 
 #Visualize results
 
-create_volcano_plot <- function(res.df, output_file) {
-  res.df <- res.df %>%
-    mutate(diffexpressed = ifelse(log2FoldChange > 0.5 & padj < 0.05, "UP",
-                                  ifelse(log2FoldChange < -0.5 & padj < 0.05, "DOWN", "NO"))) %>%
-    mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
-  
+create_volcano_plot <- function(res.df, condition_compared ,output_file) {
+
   vplot <- ggplot(data=res.df, aes(x=log2FoldChange, y= -log10(padj),  col = diffexpressed, label = delabel)) +
     geom_point() +
     geom_vline(xintercept=c(0.5, -0.5), col="red") + 
@@ -119,7 +218,7 @@ create_volcano_plot <- function(res.df, output_file) {
     theme_minimal() +
     geom_text_repel(max.overlaps = 25) +
     labs(title = "Differential expression", 
-         subtitle = paste("Using CERAD score as criteria"))
+         subtitle = paste0(condition_compared, " using CERAD score as criteria"))
   
   ggsave(output_file, plot = vplot, width = 11, height = 10, units = "in", dpi = 300)
 }
@@ -156,17 +255,19 @@ data$metadata <- data$metadata %>% filter(msex == 1)
 preprocessed_1 <- preprocess_data(data$counts, data$metadata, condition_column = "ceradsc")
 
 # Análisis diferencial de expresión entre hombres sanos (0) y enfermos (1)
-de_results_1 <- run_deseq(preprocessed$counts, preprocessed$metadata, condition_column = "ceradsc")
+de_results_1 <- run_deseq(preprocessed_1$counts, preprocessed_1$metadata, condition_column = "ceradsc")
+
+DEGS_1 <- extract_DEGS(de_results_1$dds, condition_column = "ceradsc", coldata = de_results_1$coldata)
 
 # Guardar los resultados del volcano plot
-output_file_1 <- "DEG_hombres_sanos_vs_enfermos_volcano_plot.png"
-create_volcano_plot(de_results_1$res, output_file_1)
+output_file_1 <- "DEG_control_male_vs_AD_male_volcano_plot.jpg"
+create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD males", output_file_1)
 
 # Ejecutar GSEA para los genes diferencialmente expresados
-DEGS.g <- setNames(de_results_1$res$log2FoldChange, rownames(de_results_1$res))
-DEGS.g <- sort(DEGS.g, decreasing = TRUE)
+DEGS.g_1 <- setNames(de_results_1$res$log2FoldChange, rownames(de_results_1$res))
+DEGS.g_1 <- sort(DEGS.g, decreasing = TRUE)
 
-run_gsea(DEGS.g, "GSEA_hombres_sanos_vs_enfermos.png")
+run_gsea(DEGS.g, "GSEA_control_male_vs_AD_male.jpg")
 
 ########## Mujeres sanas vs mujeres enfermas  ##########
 
@@ -181,10 +282,10 @@ de_results_0 <- run_deseq(preprocessed$counts, preprocessed$metadata, condition_
 
 # Guardar los resultados del volcano plot
 output_file_0 <- "DEG_women_control_vs_AD_volcano_plot.png"
-create_volcano_plot(de_results$res, output_file)
+create_volcano_plot(de_results_0$res, output_file)
 
 # Ejecutar GSEA para los genes diferencialmente expresados
-DEGS.g <- setNames(de_results$res$log2FoldChange, rownames(de_results$res))
+DEGS.g <- setNames(de_results_0$res$log2FoldChange, rownames(de_results_0$res))
 DEGS.g <- sort(DEGS.g, decreasing = TRUE)
 
 run_gsea(DEGS.g, "GSEA_women_control_vs_AD.png")
