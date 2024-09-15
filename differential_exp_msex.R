@@ -155,18 +155,18 @@ extract_DEGS <- function(dds, condition_column, coldata, contrast_problem, contr
 }
 
 
-extract_DEGS <- function(dds, condition_column, coldata){
+extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.v, contrast_problem, contrast_control){
   
-  res <- results(dds, contrast = c(condition_column, "1", "4"), #condition, problem, control 
+  res <- results(dds, contrast = c(condition_column, contrast_problem, contrast_control), #condition, problem, control 
                  pAdjustMethod = 'BH', alpha = 0.05)
   res.df <- res %>% as.data.frame() %>% filter(!is.na(padj))
   
   # add a column of NAs
   res.df$diffexpressed <- "NO"
   # if log2Foldchange > 0.5 and pvalue < 0.05, set as "UP" 
-  res.df$diffexpressed[res.df$log2FoldChange > 0.5 & res.df$padj < 0.05] <- "UP"
+  res.df$diffexpressed[res.df$log2FoldChange > log2FoldChange.v & res.df$padj < padj.v] <- "UP"
   # if log2Foldchange < -0.5 and pvalue < 0.05, set as "DOWN"
-  res.df$diffexpressed[res.df$log2FoldChange < -0.5 & res.df$padj < 0.05] <- "DOWN"
+  res.df$diffexpressed[res.df$log2FoldChange < -(log2FoldChange) & res.df$padj < padj.v] <- "DOWN"
   
   # Add gene names in SYMBOL --- ---
   # Create dictionary
@@ -181,11 +181,11 @@ extract_DEGS <- function(dds, condition_column, coldata){
   normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
   
   # Calcula los valores de baseMean por condición
-  baseMean_4 <- rowMeans(normcounts[, coldata$ceradsc == "4"]) %>% as.data.frame()
-  colnames(baseMean_4) <- "baseMean_ceradsc_4"
+  baseMean_4 <- rowMeans(normcounts[, coldata$ceradsc == contrast_control]) %>% as.data.frame()
+  colnames(baseMean_4) <- paste0("baseMean_", contrast_control)
   
-  baseMean_1 <- rowMeans(normcounts[, coldata$ceradsc == "1"]) %>% as.data.frame()
-  colnames(baseMean_1) <- "baseMean_ceradsc_1"
+  baseMean_1 <- rowMeans(normcounts[, coldata$ceradsc == contrast_problem]) %>% as.data.frame()
+  colnames(baseMean_1) <- paste0("baseMean_", contrast_problem)
   
   baseMean_genes <- cbind(baseMean_4, baseMean_1)
   baseMean_genes <- baseMean_genes %>% rownames_to_column(var = "feature")
@@ -203,13 +203,13 @@ extract_DEGS <- function(dds, condition_column, coldata){
   # For non-DEGs, delabel will be NA or empty
   res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
   
-  return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
+  return(list(dds = dds, res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
   
 }
 
 #Visualize results
 
-create_volcano_plot <- function(res.df, condition_compared ,output_file) {
+create_volcano_plot <- function(res.df, condition_compared, brain_region, output_file) {
 
   vplot <- ggplot(data=res.df, aes(x=log2FoldChange, y= -log10(padj),  col = diffexpressed, label = delabel)) +
     geom_point() +
@@ -219,31 +219,57 @@ create_volcano_plot <- function(res.df, condition_compared ,output_file) {
     theme_minimal() +
     geom_text_repel(max.overlaps = 25) +
     labs(title = "Differential expression", 
-         subtitle = paste0(condition_compared, " using CERAD score as criteria"))
+         subtitle = paste0(condition_compared, " using CERAD score as criteria \n in the ", brain_region))
   
   ggsave(output_file, plot = vplot, width = 11, height = 10, units = "in", dpi = 300)
 }
 
 #Create heatmap
 
-create_heatmap <- function(normcounts, DEGS, subtitle_name, output_file) {
-  #Create matrix of DEG counts --- ---
-
-DEG_mat <- normcounts %>% filter(rownames(normcounts) %in% DEGS$ensembl_gene_id)
-dim(DEG_mat)
-#[1] 28  880
-
-htmap <- pheatmap(DEG_mat,
-                  cluster_rows = F,   # Cluster the rows
-                  cluster_cols = F,   # Do not cluster the columns
-                  main = paste0("Heatmap of Differentially Expressed Genes \n", subtitle_name),
-                  show_colnames = FALSE)  # Hide the column names (sample names)
-
-ggsave(output_file, plot = htmap, width = 11, height = 10, units = "in", dpi = 300)
-                  
-return(htmap)
-
+create_heatmap_vst <- function(dds, geneNames, output_file) {
+  # Aplicar la transformación de variancia estabilizada (vst)
+  vst_data <- vst(dds, blind = FALSE)
+  
+  # Normalizar las cuentas regularizadas por filas
+  Z <- t(scale(t(assay(vst_data))))
+  
+  # Filtrar la matriz Z solo para los genes que están en geneNames
+  Z_filtered <- Z[rownames(Z) %in% geneNames, ]
+  
+  # Asegurarse de que los nombres de los genes coinciden
+  geneNames_filtered <- geneNames[geneNames %in% rownames(Z_filtered)]
+  
+  # Convertir la matriz a formato apropiado para heatmap
+  mat_gn <- Z_filtered[geneNames_filtered, , drop = FALSE]  # Filtrar solo los genes de interés
+  rownames(mat_gn) <- geneNames_filtered  # Usar los nombres de los genes para las filas
+  
+  # Crear y guardar el heatmap directamente con pheatmap
+  pheatmap(mat_gn, 
+           name = "Row Z-Score", 
+           color = colorRampPalette(c("navy", "white", "firebrick3"))(50), 
+           clustering_distance_rows = "euclidean", 
+           clustering_method = "ward.D2", 
+           fontsize = 10, 
+           angle_col = 45,  # Ángulo de las etiquetas de las columnas
+           show_rownames = TRUE,  # Cambia a TRUE si quieres mostrar los nombres de los genes
+           show_colnames = FALSE, 
+           filename = output_file)  # Guardar directamente el heatmap en el archivo
 }
+
+
+#Plot MA 
+
+plot_MA <- function(res, output_MAplot){
+  # Abrir dispositivo gráfico según la extensión del archivo
+  jpeg(output_MAplot, width = 11, height = 10, units = "in", res = 300)  # Guardar en formato PNG
+
+  # Generar el MA plot
+  plotMA(res, ylim=c(-2,2))
+  
+  # Cerrar el dispositivo gráfico
+  dev.off()
+}
+
 
 #run GSEA
 run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP, name_simmatrix_MF) {
@@ -282,13 +308,9 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
   degree_BP <- degree(simatrix_BP.g) %>% as.data.frame()
   degree_BP$. <- sort(degree_BP$., decreasing = TRUE)
   
-  ggraph(simatrix_BP.g, layout = 'kk') + 
-    geom_edge_fan() + 
-    geom_node_point()
-  
-    emmap_BP <- emapplot(simatrix_BP, showCategory = 25, group_legend = T,
+  emmap_BP <- emapplot(simatrix_BP, showCategory = 25, group_legend = T,
                        layout = "kk", repel = T) +
-    theme(plot.margin = unit(c(1,1,1,1), "cm"))
+  theme(plot.margin = unit(c(1,1,1,1), "cm"))
   
   #emmap plot BP
   simatrix_MF <- pairwise_termsim(gse_MF)
@@ -296,10 +318,6 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
   simatrix_MF.g <- graph_from_adjacency_matrix(simatrix_MF.m)
   degree_MF <- degree(simatrix_MF.g) %>% as.data.frame()
   degree_MF$. <- sort(degree_MF$., decreasing = TRUE)
-  
-  ggraph(simatrix_MF.g, layout = 'kk') + 
-    geom_edge_fan() + 
-    geom_node_point()
   
   emmap_MF <- emapplot(simatrix_BP, showCategory = 25, group_legend = T,
                        layout = "kk", repel = T) +
@@ -311,6 +329,9 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
   ggsave(name_simmatrix_BP, plot = emmap_BP, height = 15, width = 20, dpi = 300)
   ggsave(name_simmatrix_MF, plot = emmap_MF, height = 15, width = 20, dpi = 300)
   
+  return(list(simatrix_MF = simatrix_MF,
+              simatrix_BP = simatrix_BP)
+  )
 }
 
 #Main -----
@@ -343,26 +364,33 @@ vroom::vroom_write(DEGS_1$DEGS, file = "ROSMAP_DLFPC_DEGS_control_male_vs_AD_mal
 
 #Save volcano plot
 
-output_file_1 <- "DEG_control_male_vs_AD_male_volcano_plot.jpg"
-create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD males", output_file_1)
+create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD males",
+                    brain_region = "DLPFC - ROSMAP", 
+                    output_file = "ROSMAP_DLFPC_DEG_control_male_vs_AD_male_volcano_plot.jpg")
 
-create_heatmap(normcounts = DEGS_1$normcounts, DEGS = DEGS_1$DEGS, subtitle_name = "Control males vs AD males",
-               output_file = "DEG_control_male_vs_AD_male_heatmap.jpg")
+#Save heatmap
+
+create_heatmap_vst(dds = de_results_1$dds, geneNames = DEGS_1$DEGS$ensembl_gene_id, 
+                   output_file = "ROSMAP_DLFPC_DEG_control_male_vs_AD_male_heatmap.jpg")
+
+#Save MA plot
+
+plot_MA(DEGS_1$res, output_MAplot = "ROSMAP_DLFPC_DEG_control_male_vs_AD_male_MA_plot.jpg")
 
 # Run GSEA for DEGS
 DEGS.g_1 <- setNames(DEGS_1$res$log2FoldChange, rownames(DEGS_1$res))
 DEGS.g_1 <- sort(DEGS.g_1, decreasing = TRUE)
 
-run_gsea(DEGS.g_1,
-         name_BP_dotplot = "GSEA_control_male_vs_AD_male_BP_dotplot.jpg",
-         name_MF_dotplot  = "GSEA_control_male_vs_AD_male_MF_dotplot.jpg", 
-         name_simmatrix_BP = "GSEA_control_male_vs_AD_male_BP_emmapplot.jpg",
-         name_simmatrix_MF = "GSEA_control_male_vs_AD_male_MF_emmapplot.jpg")
+GSEA_1 <- run_gsea(DEGS.g_1,
+         name_BP_dotplot = "ROSMAP_DLFPC_GSEA_control_male_vs_AD_male_BP_dotplot.jpg",
+         name_MF_dotplot  = "ROSMAP_DLFPC_GSEA_control_male_vs_AD_male_MF_dotplot.jpg", 
+         name_simmatrix_BP = "ROSMAP_DLFPC_GSEA_control_male_vs_AD_male_BP_emmapplot.jpg",
+         name_simmatrix_MF = "ROSMAP_DLFPC_GSEA_control_male_vs_AD_male_MF_emmapplot.jpg")
 
 #Save enrichments
 
-vroom::vroom_write(DEGS.g_1$simatrix_BP@result, file ="ROSMAP_DLFPC_GO_BP_results_control_male_vs_AD_male.txt")
-vroom::vroom_write(DEGS.g_1$simatrix_MF@result, file ="ROSMAP_DLFPC_GO_MF_results_control_male_vs_AD_male.txt")
+vroom::vroom_write(GSEA_1$simatrix_BP@result, file ="ROSMAP_DLFPC_GO_BP_results_control_male_vs_AD_male.txt")
+vroom::vroom_write(GSEA_1$simatrix_MF@result, file ="ROSMAP_DLFPC_GO_MF_results_control_male_vs_AD_male.txt")
 
 ########## Control female vs AD females  ##########
 
@@ -389,27 +417,34 @@ vroom::vroom_write(DEGS_0$res.df, file = "ROSMAP_DLFPC_DE_full_gene_list_control
 vroom::vroom_write(DEGS_0$DEGS, file = "ROSMAP_DLFPC_DEGS_control_female_vs_AD_female.txt")
 
 # Save volcano plot
+ 
+create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD females", 
+                    brain_region = "DLPFC - ROSMAP",
+                    output_file ="ROSMAP_DLFPC_DEG_control_female_vs_AD_female_volcano_plot.jpg")
 
-output_file_0 <- "DEG_control_female_vs_AD_female_volcano_plot.jpg"
-create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD females", output_file_0)
+#Save heatmap
 
-create_heatmap(normcounts = DEGS_0$normcounts, DEGS = DEGS_0$DEGS, subtitle_name = "Control females vs AD females",
-               output_file = "DEG_control_female_vs_AD_female_heatmap.jpg")
+create_heatmap_vst(dds = de_results_0$dds, geneNames = DEGS_0$DEGS$ensembl_gene_id, 
+                   output_file = "ROSMAP_DLFPC_DEG_control_female_vs_AD_female_heatmap.jpg")
+
+#Save MA plot
+
+plot_MA(DEGS_0$res, output_MAplot = "ROSMAP_DLFPC_DEG_control_female_vs_AD_female_MA_plot.jpg")
 
 # Ejecutar GSEA para los genes diferencialmente expresados
 DEGS.g_0 <- setNames(DEGS_0$res$log2FoldChange, rownames(DEGS_0$res))
 DEGS.g_0 <- sort(DEGS.g_0, decreasing = TRUE)
 
-run_gsea(DEGS.g_0,
-         name_BP_dotplot = "GSEA_control_female_vs_AD_female_BP_dotplot.jpg",
-         name_MF_dotplot  = "GSEA_control_female_vs_AD_female_MF_dotplot.jpg", 
-         name_simmatrix_BP = "GSEA_control_female_vs_AD_female_BP_emmapplot.jpg",
-         name_simmatrix_MF = "GSEA_control_female_vs_AD_female_MF_emmapplot.jpg")
+GSEA_0 <- run_gsea(DEGS.g_0,
+         name_BP_dotplot = "ROSMAP_DLFPC_GSEA_control_female_vs_AD_female_BP_dotplot.jpg",
+         name_MF_dotplot  = "ROSMAP_DLFPC_GSEA_control_female_vs_AD_female_MF_dotplot.jpg", 
+         name_simmatrix_BP = "ROSMAP_DLFPC_GSEA_control_female_vs_AD_female_BP_emmapplot.jpg",
+         name_simmatrix_MF = "ROSMAP_DLFPC_GSEA_control_female_vs_AD_female_MF_emmapplot.jpg")
 
 #Save enrichments
 
-vroom::vroom_write(DEGS.g_0$simatrix_BP@result, file ="ROSMAP_DLFPC_GO_BP_results_control_female_vs_AD_female.txt")
-vroom::vroom_write(DEGS.g_0$simatrix_MF@result, file ="ROSMAP_DLFPC_GO_MF_results_control_female_vs_AD_female.txt")
+vroom::vroom_write(GSEA_0$simatrix_BP@result, file ="ROSMAP_DLFPC_GO_BP_results_control_female_vs_AD_female.txt")
+vroom::vroom_write(GSEA_0$simatrix_MF@result, file ="ROSMAP_DLFPC_GO_MF_results_control_female_vs_AD_female.txt")
 
 ########## AD females vs AD males  #######
 
@@ -424,7 +459,7 @@ de_results_AD <- run_deseq(preprocessed_AD$counts, preprocessed_AD$metadata, con
 DEGS_AD <- extract_DEGS(de_results_AD$dds, condition_column = "msex",
                         coldata = de_results_AD$coldata,
                         contrast_problem = "0",
-                        contrast_control = "1"))
+                        contrast_control = "1")
 
 #Save log2fold change full list 
 
@@ -436,20 +471,28 @@ vroom::vroom_write(DEGS_AD$DEGS, file = "ROSMAP_DLFPC_DEGS_AD_female_vs_AD_male.
 
 # Save volcano plot
 
-output_file_AD <- "DEG_AD_female_vs_AD_male_volcano_plot.jpg"
-create_volcano_plot(DEGS_AD$res.df, condition_compared = "Control AD males vs AD females", output_file_AD)
+create_volcano_plot(DEGS_AD$res.df, condition_compared = "Control AD males vs AD females",
+                    brain_region = "DLPFC - ROSMAP",
+                    output_file = "ROSMAP_DLFPC_DEG_AD_female_vs_AD_male_volcano_plot.jpg")
 
-create_heatmap(normcounts = DEGS_AD$normcounts, DEGS = DEGS_AD$DEGS, subtitle_name = "Control AD males vs AD females",
-               output_file = "DEG_control_AD_female_vs_AD_male_heatmap.jpg")
+#Save heatmap
+
+create_heatmap_vst(dds = de_results_AD$dds, geneNames = DEGS_AD$DEGS$ensembl_gene_id, 
+                   output_file = "ROSMAP_DLFPC_DEG_AD_female_vs_AD_male_heatmap.jpg")
+
+#Save MA plot
+
+plot_MA(DEGS_0$res, output_MAplot = "ROSMAP_DLFPC_DEG_AD_female_vs_AD_male__MA_plot.jpg")
+
 
 # Ejecutar GSEA para los genes diferencialmente expresados
 DEGS.g_AD <- setNames(DEGS_AD$res$log2FoldChange, rownames(DEGS_AD$res))
 DEGS.g_AD <- sort(DEGS.g_AD, decreasing = TRUE)
 
-run_gsea(DEGS.g_AD,
-         name_BP_dotplot = "GSEA_control_AD_female_vs_AD_male_BP_dotplot.jpg",
-         name_MF_dotplot  = "GSEA_control_AD_female_vs_AD_male_MF_dotplot.jpg", 
-         name_simmatrix_BP = "GSEA_control_AD_female_vs_AD_male_BP_emmapplot.jpg",
-         name_simmatrix_MF = "GSEA_control_AD_female_vs_AD_male_MF_emmapplot.jpg")
+GSEA_AD <- run_gsea(DEGS.g_AD,
+         name_BP_dotplot = "ROSMAP_DLFPC_GSEA_control_AD_female_vs_AD_male_BP_dotplot.jpg",
+         name_MF_dotplot  = "ROSMAP_DLFPC_GSEA_control_AD_female_vs_AD_male_MF_dotplot.jpg", 
+         name_simmatrix_BP = "ROSMAP_DLFPC_GSEA_control_AD_female_vs_AD_male_BP_emmapplot.jpg",
+         name_simmatrix_MF = "ROSMAP_DLFPC_GSEA_control_AD_female_vs_AD_male_MF_emmapplot.jpg")
 
 #END ----
