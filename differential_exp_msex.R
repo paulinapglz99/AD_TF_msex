@@ -6,7 +6,8 @@
 
 # Load necessary libraries
 pacman::p_load("tidyverse", 
-               "DESeq2", 
+               "DESeq2",
+               "sva",
                "pheatmap", 
                "ggplot2", 
                "ggrepel", 
@@ -27,6 +28,12 @@ counts <- args[1]
 metadata <- args[2]
 brain_area <- args[3]
 brain_area <- as.character(brain_area)
+tissue_batch_correction <- args[4] #boolean
+
+counts <- "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds"
+metadata <- "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt"
+brain_area <- "FRONTAL_ROSMAP"
+tissue_batch_correction <- TRUE
 
 # Set seed
 set.seed(10)
@@ -74,10 +81,31 @@ del_dupl <- function(counts) {
   return(counts)
 }
 
+#Batch correction 
+
+# Function to apply ComBat batch correction
+batch_correction <- function(counts, metadata, batch_column) {
+  counts <- counts[-c(1:4),]  # Remove the first four rows
+  counts <- as.matrix(counts)
+  # Extraer el vector de lote desde el metadata
+  batch <- metadata[[batch_column]]
+  
+  # Aplicar ComBat para la corrección del efecto de lote
+  corrected_counts <- ComBat(dat = as.matrix(counts), 
+                             batch = batch, 
+                             mod = NULL,  # Si tienes otros covariables, puedes agregarlas aquí
+                             par.prior = TRUE, 
+                             prior.plots = FALSE)
+  
+  # Convertir los resultados corregidos a data frame
+  corrected_counts <- as.data.frame(corrected_counts)
+  
+  return(corrected_counts)
+}
+
 #Pre-process data
 
 preprocess_data <- function(counts, metadata, condition_column, sex, ceradsc_condition) {
-  counts <- counts[-c(1:4),]  # Remove the first four rows
   counts <- counts %>% mutate(feature = str_remove(feature, "\\..*$"))
   counts <- del_dupl(counts)
   rownames(counts) <- NULL
@@ -316,6 +344,16 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 
 # Load data
 data <- load_data()
+
+#Correct batch
+
+counts <- batch_correction(counts, metadata, "sequencingBatch")
+
+#Correct tissue batch (only if necessary, then tissue_batch_correction == TRUE)
+
+counts <- ifelse(tissue_batch_correction, 
+                 batch_correction(counts, metadata, "tissue"), 
+                 counts)  # Si doom es FALSE, retorna el objeto counts sin cambios
 
 ####### Control male vs AD males ##########
 
