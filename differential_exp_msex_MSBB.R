@@ -27,6 +27,12 @@ counts <- args[1]
 metadata <- args[2]
 brain_area <- args[3]
 brain_area <- as.character(brain_area)
+tissue_batch_correction <- args[4] #boolean
+
+counts <- readRDS("/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds") %>% as.data.frame()
+etadata <- vroom::vroom("/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt")
+brain_area <- "FRONTAL_MSBB"
+tissue_batch_correction <- TRUE
 
 # Set seed
 set.seed(10)
@@ -76,8 +82,12 @@ del_dupl <- function(counts) {
 
 #Pre-process data
 
-preprocess_data <- function(counts, metadata, condition_column, sex, ceradsc_condition) {
-  counts <- counts[-c(1:4),]  # Remove the first four rows
+preprocess_data <- function(counts, metadata) {
+  print(dim(metadata))
+  print(dim(counts))
+  counts <- counts[-c(1:4), ]
+  print(dim(counts))
+  
   counts <- counts %>% mutate(feature = str_remove(feature, "\\..*$"))
   counts <- del_dupl(counts)
   rownames(counts) <- NULL
@@ -88,14 +98,47 @@ preprocess_data <- function(counts, metadata, condition_column, sex, ceradsc_con
   
   # Filter metadata based on conditions
   metadata <- metadata %>% filter(exclude == FALSE)
-  metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
-  metadata <- metadata %>% filter(sex %in% sex)
-  metadata <- metadata %>% filter(ceradsc %in% ceradsc_condition)
   
-  # Select columns in counts that match specimenID in metadata
-  counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
   
+  # Filtrar metadata antes de aplicar la corrección de lote
+  if ("sequencingBatch" %in% colnames(metadata)) {
+    metadata <- metadata[!is.na(metadata$sequencingBatch), ]
+  }
+  print(dim(metadata))
+  
+  if ("exclude" %in% colnames(metadata)) {
+    metadata <- metadata[metadata$exclude != TRUE | is.na(metadata$exclude), ]
+  }
+  print(dim(metadata))
+  
+  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  metadata <- metadata %>%
+    dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  print(dim(metadata))
+  
+  specimenIDs <- metadata$specimenID
+  counts <- counts %>% 
+    dplyr::select(c(1, any_of(specimenIDs)))
+  counts <- counts[rowSums(counts) != 0, ]
+  print(dim(counts))
+  
+  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  metadata <- metadata %>% dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  print(dim(metadata))
   return(list(counts = counts, metadata = metadata))
+}
+
+#Process data 
+
+process_data <- function(counts, metadata, condition_column, sex, ceradsc_condition) {
+  metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
+metadata <- metadata %>% filter(sex %in% sex)
+metadata <- metadata %>% filter(ceradsc %in% ceradsc_condition)
+
+# Select columns in counts that match specimenID in metadata
+counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
+
+return(list(counts = counts, metadata = metadata))
 }
 
 #Run deseq

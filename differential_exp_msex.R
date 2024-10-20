@@ -4,7 +4,9 @@
 #AD men vs control men
 #AD men vs AD women
 
-# Load necessary libraries
+time <- Sys.time()
+
+cat("# Load libraries\n")
 pacman::p_load("tidyverse", 
                "DESeq2",
                "sva",
@@ -19,6 +21,8 @@ pacman::p_load("tidyverse",
                "org.Hs.eg.db",
                "fgsea", 
                "enrichplot")
+# Set seed
+set.seed(10)
 
 #Args
 
@@ -27,22 +31,22 @@ args <- commandArgs(trailingOnly = TRUE)
 counts <- args[1]
 metadata <- args[2]
 brain_area <- args[3]
-brain_area <- as.character(brain_area)
 tissue_batch_correction <- args[4] #boolean
 
-counts <- "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds"
-metadata <- "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt"
-brain_area <- "FRONTAL_ROSMAP"
-tissue_batch_correction <- TRUE
+ counts <- readRDS("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds") %>% as.data.frame()
+ metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt")
+ brain_area <- "FRONTAL_ROSMAP"
+ tissue_batch_correction <- TRUE
 
-# Set seed
-set.seed(10)
+cat("Define functions \n")
 
 #Load data
 
-load_data <- function(counts, metadata) {
+load_data <- function(args) {
   counts <- readRDS(file = args[1]) %>% as.data.frame()
   metadata <- vroom::vroom(file = args[2])
+  brain_area <- as.character(args[3])  # Asumiendo que brain_area es el tercer argumento
+  tissue_batch_correction <- as.logical(args[4])  # Si es un booleano
   
   return(list(counts = counts, metadata = metadata))
 }
@@ -81,31 +85,14 @@ del_dupl <- function(counts) {
   return(counts)
 }
 
-#Batch correction 
-
-# Function to apply ComBat batch correction
-batch_correction <- function(counts, metadata, batch_column) {
-  counts <- counts[-c(1:4),]  # Remove the first four rows
-  counts <- as.matrix(counts)
-  # Extraer el vector de lote desde el metadata
-  batch <- metadata[[batch_column]]
-  
-  # Aplicar ComBat para la corrección del efecto de lote
-  corrected_counts <- ComBat(dat = as.matrix(counts), 
-                             batch = batch, 
-                             mod = NULL,  # Si tienes otros covariables, puedes agregarlas aquí
-                             par.prior = TRUE, 
-                             prior.plots = FALSE)
-  
-  # Convertir los resultados corregidos a data frame
-  corrected_counts <- as.data.frame(corrected_counts)
-  
-  return(corrected_counts)
-}
-
 #Pre-process data
 
-preprocess_data <- function(counts, metadata, condition_column, sex, ceradsc_condition) {
+preprocess_data <- function(counts, metadata) {
+  print(dim(metadata))
+  print(dim(counts))
+  counts <- counts[-c(1:4), ]
+  print(dim(counts))
+  
   counts <- counts %>% mutate(feature = str_remove(feature, "\\..*$"))
   counts <- del_dupl(counts)
   rownames(counts) <- NULL
@@ -114,8 +101,45 @@ preprocess_data <- function(counts, metadata, condition_column, sex, ceradsc_con
   # Ensure ceradsc is treated as a factor
   metadata <- metadata %>% mutate(ceradsc = factor(ceradsc))
   
-  # Filter metadata based on conditions
-  metadata <- metadata %>% filter(is.na(exclude))
+  cat("# Filter metadata based on conditions")
+  if ("exclude" %in% colnames(metadata)) {
+    metadata <- metadata[metadata$exclude != TRUE | is.na(metadata$exclude), ]
+  }
+  metadata <- metadata %>% filter(!is.na(ceradsc))
+  print(dim(metadata))
+  
+  cat("# Filter NAs in sequencingBatch")
+  if ("sequencingBatch" %in% colnames(metadata)) {
+    metadata <- metadata[!is.na(metadata$sequencingBatch), ]
+  }
+  print(dim(metadata))
+  
+  # Eliminar el valor "0, 6, 7" si existe
+  if ("0, 6, 7" %in% metadata$sequencingBatch) {
+    metadata <- metadata %>% filter(sequencingBatch != "0, 6, 7")
+  }
+  
+  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  metadata <- metadata %>%
+    dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  print(dim(metadata))
+  
+  specimenIDs <- metadata$specimenID
+  counts <- counts %>% 
+    dplyr::select(c(1, any_of(specimenIDs)))
+  #counts <- counts[rowSums(counts) != 0, ]
+  print(dim(counts))
+  
+  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  metadata <- metadata %>% dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  print(dim(metadata))
+  return(list(counts = counts, metadata = metadata))
+  
+}
+
+#Process data
+
+process_data <- function(counts, metadata, condition_column, sex, ceradsc_condition) {
   metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
   metadata <- metadata %>% filter(msex %in% sex)
   metadata <- metadata %>% filter(ceradsc %in% ceradsc_condition)
@@ -134,23 +158,41 @@ run_deseq <- function(counts, metadata, condition_column) {
   
   coldata <- coldata %>%
     left_join(metadata, by = "specimenID") %>%
-    dplyr::select("specimenID", "sequencingBatch","msex","cogdx", "ceradsc", condition_column)
+    dplyr::select("specimenID", "sequencingBatch","msex", "ceradsc", "tissue")
   
-  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])  # Convert to factor
+  # Convert the condition column to a factor, in case it's not
+  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
   
-  dds <- DESeqDataSetFromMatrix(countData = counts, 
-                                colData = coldata,
-                                design = as.formula(paste("~ sequencingBatch +", condition_column)))  
-  dds <- DESeq(dds)
+  # # Remove empty levels from factors in coldata
+  coldata <- droplevels(coldata)
   
-  return(list(dds = dds, 
-              coldata = coldata))
+  coldata$sequencingBatch <- as.factor(coldata$sequencingBatch)
+  coldata$tissue <- as.factor(coldata$tissue)
+  coldata$ceradsc <- as.factor(coldata$ceradsc)
+  
+  # Verificar si 'tissue' tiene más de un nivel
+  # if (length(unique(coldata$tissue)) > 1) {
+  #   design_formula <- as.formula(paste("~ sequencingBatch + tissue +", condition_column))
+  # } else {
+  #   design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
+  # }
+  
+  design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
+  
+  # dds <- DESeqDataSetFromMatrix(countData = counts, 
+  #                                colData = coldata,
+  #                                design = design_formula)
+  # dds <- DESeq(dds)
+  
+  return(list(#dds = dds, 
+              coldata = coldata, 
+              design_formula = design_formula))
 }
 
 #Extract DEGS
 
 extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.v, 
-                         contrast_problem, contrast_control){
+                         contrast_problem, contrast_control, label, brain_area){
   
   res <- results(dds, contrast = c(condition_column, contrast_problem, contrast_control), #condition, problem, control 
                  pAdjustMethod = 'BH', alpha = 0.05)
@@ -198,8 +240,16 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   # For non-DEGs, delabel will be NA or empty
   res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
   
-  return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
+  # Modify column names with label and brain_area for res.df
+  new_colnames_res_df <- paste0(colnames(res.df)[-1], "_", label, "_", brain_area)
+  colnames(res.df)[-1] <- new_colnames_res_df
   
+  # Modify column names with label and brain_area for DEGS
+  new_colnames_DEGS <- paste0(colnames(DEGS)[-1], "_", label, "_", brain_area)
+  colnames(DEGS)[-1] <- new_colnames_DEGS
+  
+  # Return the result
+  return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
 }
 
 #Visualize results
@@ -260,7 +310,6 @@ create_heatmap_vst <- function(dds, geneNames, output_file) {
            show_colnames = FALSE, 
            filename = output_file)  # Guardar directamente el heatmap en el archivo
 } }
-
 
 #Plot MA 
 
@@ -342,37 +391,44 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 
 ###### MAIN #####
 
-# Load data
+cat("# Load data")
 data <- load_data()
+counts <- data$counts
+metadata <- data$metadata
 
-#Correct batch
+cat("Dim data:", dim(counts), "\n")
 
-counts <- batch_correction(counts, metadata, "sequencingBatch")
+cat("Dim metadata:", dim(metadata), "\n")
 
-#Correct tissue batch (only if necessary, then tissue_batch_correction == TRUE)
+#only for ROSMAP
 
-counts <- ifelse(tissue_batch_correction, 
-                 batch_correction(counts, metadata, "tissue"), 
-                 counts)  # Si doom es FALSE, retorna el objeto counts sin cambios
+cat("#Pre-process data")
+
+preprocessed_data <- preprocess_data(counts = counts, metadata = metadata)
 
 ####### Control male vs AD males ##########
 
 cat("####### Control male vs AD males ##########")
 
 # Pre-proces data, filter by condition and sex
-preprocessed_1 <- preprocess_data(data$counts, data$metadata, 
+preprocessed_1 <- process_data(preprocessed_data$counts, preprocessed_data$metadata, 
                                   condition_column = "ceradsc", 
-                                  sex = "1", ceradsc_condition = c("1", "4"))
+                                  sex = "1",  # i want only males
+                                  ceradsc_condition = c("1", "4")) #from both conditions to compare
 
 # DEA control males vs AD males
 de_results_1 <- run_deseq(preprocessed_1$counts, preprocessed_1$metadata, condition_column = "ceradsc")
 
-DEGS_1 <- extract_DEGS(de_results_1$dds, condition_column = "ceradsc", 
-                       coldata = de_results_1$coldata, 
-                       padj.v = 0.05,
-                       log2FoldChange.v = 0.5,
-                       contrast_problem = "1",
-                       contrast_control = "4")
+# Prueba de la función
+DEGS_1 <-extract_DEGS(de_results_1$dds, 
+             condition_column = "ceradsc", 
+             coldata = de_results_1$coldata, 
+             padj.v = 0.05,
+             log2FoldChange.v = 0.5, 
+             contrast_problem = "1",
+             contrast_control = "4",
+             label = "c_male_vs_AD_male",
+             brain_area = brain_area)
 
 #Save log2fold change full list 
 
@@ -407,7 +463,7 @@ GSEA_1 <- run_gsea(DEGS.g_1,
          name_simmatrix_BP = paste0(brain_area, "_GSEA_control_male_vs_AD_male_BP_emmapplot.jpg"),
          name_simmatrix_MF = paste0(brain_area, "_GSEA_control_male_vs_AD_male_MF_emmapplot.jpg"))
 
-#Save enrichments
+cat("#Save enrichments")
 
 if (!is.null(GSEA_1$simatrix_BP)) {
   vroom::vroom_write(GSEA_1$simatrix_BP@result, 
@@ -416,7 +472,7 @@ if (!is.null(GSEA_1$simatrix_BP)) {
   message("No enriched terms found for BP.")
 }
 
-# Verifica si hay términos enriquecidos en MF antes de escribir los resultados
+# Check for enriched terms in MF before writing the results
 if (!is.null(GSEA_1$simatrix_MF)) {
   vroom::vroom_write(GSEA_1$simatrix_MF@result, 
                      file = paste0(brain_area, "_GO_MF_results_control_male_vs_AD_male.txt"))
@@ -427,9 +483,9 @@ if (!is.null(GSEA_1$simatrix_MF)) {
 ########## Control female vs AD females  ##########
 cat("########## Control female vs AD females  ##########")
 
-#Pre-processing data
+#Processing data
 
-preprocessed_0 <- preprocess_data(data$counts, data$metadata, 
+preprocessed_0 <- process_data(preprocessed_data$counts, preprocessed_data$metadata, 
                                   condition_column = "ceradsc", 
                                   sex = "0", ceradsc_condition = c("1", "4"))
 
@@ -437,12 +493,14 @@ preprocessed_0 <- preprocess_data(data$counts, data$metadata,
 de_results_0 <- run_deseq(preprocessed_0$counts, preprocessed_0$metadata, condition_column = "ceradsc")
 
 DEGS_0 <- extract_DEGS(de_results_0$dds, 
-                       condition_column = "ceradsc", 
-                       coldata = de_results_0$coldata, 
-                       padj.v = 0.05,
-                       log2FoldChange.v = 0.5, 
-                       contrast_problem = "1",
-                       contrast_control = "4")
+             condition_column = "ceradsc", 
+             coldata = de_results_0$coldata, 
+             padj.v = 0.05,
+             log2FoldChange.v = 0.5, 
+             contrast_problem = "1",
+             contrast_control = "4",
+             label = "c_female_vs_AD_female",
+             brain_area = brain_area)
 
 #Save log2fold change full list 
 
@@ -498,8 +556,8 @@ if (!is.null(GSEA_0$simatrix_MF)) {
 
 cat("########## AD females vs AD males  #######\n")
 
-# Data pre-process
-preprocessed_AD <- preprocess_data(data$counts, data$metadata,
+# Data process
+preprocessed_AD <- process_data(preprocessed_data$counts, preprocessed_data$metadata,
                                    condition_column = "msex", 
                                    sex = c("0", "1"), ceradsc_condition = "1")
 
@@ -512,7 +570,9 @@ DEGS_AD <- extract_DEGS(de_results_AD$dds,
                         padj.v = 0.05,
                         log2FoldChange.v = 0.5,
                         contrast_problem = "0",
-                        contrast_control = "1")
+                        contrast_control = "1",
+                        label = "AD_male_vs_AD_female",
+                        brain_area = brain_area)
 
 #Save log2fold change full list 
 
@@ -535,7 +595,7 @@ create_heatmap_vst(dds = de_results_AD$dds, geneNames = DEGS_AD$DEGS$ensembl_gen
 
 #Save MA plot
 
-plot_MA(DEGS_0$res, output_MAplot = paste0(brain_area, "_DEG_AD_female_vs_AD_male_MA_plot.jpg"))
+plot_MA(DEGS_AD$res, output_MAplot = paste0(brain_area, "_DEG_AD_female_vs_AD_male_MA_plot.jpg"))
 
 # Ejecutar GSEA para los genes diferencialmente expresados
 DEGS.g_AD <- setNames(DEGS_AD$res$log2FoldChange, rownames(DEGS_AD$res))
@@ -564,4 +624,16 @@ if (!is.null(GSEA_AD$simatrix_MF)) {
   message("No enriched terms found for MF.")
 }
 
+#Table for IPA
+
+IPA <- DEGS_0$res.df %>% 
+  left_join(DEGS_1$res.df) %>% 
+  left_join(DEGS_AD$res.df)
+
+#Save table for IPA
+
+vroom::vroom_write(IPA,
+                  file = paste0(brain_area, "_IPA_table.txt") )
+
 cat("END ----")
+cat("Elapsed time:", Sys.time() - time, "hours")

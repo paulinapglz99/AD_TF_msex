@@ -179,6 +179,68 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   
 }
 
+#NEW
+extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.v, 
+                         contrast_problem, contrast_control, label, brain_area){
+  
+  res <- results(dds, contrast = c(condition_column, contrast_problem, contrast_control), #condition, problem, control 
+                 pAdjustMethod = 'BH', alpha = 0.05)
+  res.df <- res %>% as.data.frame() %>% filter(!is.na(padj))
+  
+  # add a column of NAs
+  res.df$diffexpressed <- "NO"
+  # if log2Foldchange > 0.5 and pvalue < 0.05, set as "UP" 
+  res.df$diffexpressed[res.df$log2FoldChange > log2FoldChange.v & res.df$padj < padj.v] <- "UP"
+  # if log2Foldchange < -0.5 and pvalue < 0.05, set as "DOWN"
+  res.df$diffexpressed[res.df$log2FoldChange < -(log2FoldChange.v) & res.df$padj < padj.v] <- "DOWN"
+  
+  # Add gene names in SYMBOL --- ---
+  # Create dictionary
+  symbol <- convert_ens_to_symbol(rownames(res))
+  
+  # Make rownames columns
+  res.df <- res.df %>% mutate(ensembl_gene_id = rownames(.), .before = 1) 
+  res.df <- res.df %>% left_join(symbol, by = "ensembl_gene_id") #merge
+  
+  # BaseMean by condition --- ---
+  # Extract counts normalized 
+  normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
+  
+  # Calcula los valores de baseMean por condición
+  baseMean_4 <- rowMeans(normcounts[, coldata$ceradsc == contrast_control]) %>% as.data.frame()
+  colnames(baseMean_4) <- paste0("baseMean_", contrast_control)
+  
+  baseMean_1 <- rowMeans(normcounts[, coldata$ceradsc == contrast_problem]) %>% as.data.frame()
+  colnames(baseMean_1) <- paste0("baseMean_", contrast_problem)
+  
+  baseMean_genes <- cbind(baseMean_4, baseMean_1)
+  baseMean_genes <- baseMean_genes %>% rownames_to_column(var = "feature")
+  
+  # DEGs are...
+  DEGS <- res.df %>% filter(diffexpressed != "NO")
+  dim(DEGS)
+  
+  baseMean_DEGS <- baseMean_genes %>% filter(feature %in% DEGS$ensembl_gene_id)
+  DEGS <-  DEGS %>% left_join(baseMean_DEGS, by = c("ensembl_gene_id" = "feature"))
+  
+  # Add delabel column with gene names for DEGs
+  DEGS <- DEGS %>% mutate(delabel = external_gene_name)
+  
+  # For non-DEGs, delabel will be NA or empty
+  res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
+  
+  # Modify column names with label and brain_area for res.df
+  new_colnames_res_df <- paste0(colnames(res.df)[-1], "_", label, "_", brain_area)
+  colnames(res.df)[-1] <- new_colnames_res_df
+  
+  # Modify column names with label and brain_area for DEGS
+  new_colnames_DEGS <- paste0(colnames(DEGS)[-1], "_", label, "_", brain_area)
+  colnames(DEGS)[-1] <- new_colnames_DEGS
+  
+  # Return the result
+  return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
+}
+
 #Visualize results
 
 create_volcano_plot <- function(res.df, condition_compared, brain_region, output_file) {
