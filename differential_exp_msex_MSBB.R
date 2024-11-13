@@ -29,10 +29,10 @@ brain_area <- args[3]
 brain_area <- as.character(brain_area)
 tissue_batch_correction <- args[4] #boolean
 
-counts <- readRDS("/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds") %>% as.data.frame()
-etadata <- vroom::vroom("/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt")
-brain_area <- "FRONTAL_MSBB"
-tissue_batch_correction <- TRUE
+counts <- readRDS("/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/MSBB_RNAseq_rawcounts_STG.rds") %>% as.data.frame()
+metadata <- vroom::vroom("/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/metadata/MSBB_RNAseq_metadata_STG.txt")
+brain_area <- "STG_MSBB"
+tissue_batch_correction <- FALSE
 
 # Set seed
 set.seed(10)
@@ -111,7 +111,7 @@ preprocess_data <- function(counts, metadata) {
   }
   print(dim(metadata))
   
-  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  specimenIDs_in_counts <- colnames(counts) 
   metadata <- metadata %>%
     dplyr::filter(specimenID %in% specimenIDs_in_counts)
   print(dim(metadata))
@@ -130,13 +130,13 @@ preprocess_data <- function(counts, metadata) {
 
 #Process data 
 
-process_data <- function(counts, metadata, condition_column, sex, ceradsc_condition) {
-  metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
-metadata <- metadata %>% filter(sex %in% sex)
-metadata <- metadata %>% filter(ceradsc %in% ceradsc_condition)
+process_data <- function(counts, metadata, condition_column, sex_condition, ceradsc_condition) {
+  metadata <- metadata %>% filter(!is.na(!!sym(condition_column))) %>% 
+  filter(sex %in% sex_condition) %>% 
+  filter(ceradsc %in% ceradsc_condition)
 
-# Select columns in counts that match specimenID in metadata
-counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
+  # Select columns in counts that match specimenID in metadata
+  counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
 
 return(list(counts = counts, metadata = metadata))
 }
@@ -153,13 +153,21 @@ run_deseq <- function(counts, metadata, condition_column) {
   
   coldata[[condition_column]] <- as.factor(coldata[[condition_column]])  # Convert to factor
   
+  #Verificar si 'tissue' tiene más de un nivel
+  if (length(unique(coldata$tissue)) > 1) {
+    design_formula <- as.formula(paste("~ sequencingBatch + tissue +", condition_column))
+  } else {
+    design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
+  }
+
   dds <- DESeqDataSetFromMatrix(countData = counts, 
                                 colData = coldata,
-                                design = as.formula(paste("~ sequencingBatch +", condition_column)))  
+                                design = design_formula)  
   dds <- DESeq(dds)
   
   return(list(dds = dds, 
-              coldata = coldata))
+              coldata = coldata, 
+              design_formula = design_formula))
 }
 
 #Extract DEGS
@@ -277,7 +285,6 @@ create_heatmap_vst <- function(dds, geneNames, output_file) {
            filename = output_file)  # Guardar directamente el heatmap en el archivo
 } }
 
-
 #Plot MA 
 
 plot_MA <- function(res, output_MAplot){
@@ -361,14 +368,20 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 # Load data
 data <- load_data()
 
+#Pre-process data
+
+data <- preprocess_data(counts = counts, metadata = metadata)
+
 ####### Control male vs AD males ##########
 
 cat("####### Control male vs AD males ##########")
 
 # Pre-proces data, filter by condition and sex
-preprocessed_1 <- preprocess_data(data$counts, data$metadata, 
-                                  condition_column = "ceradsc", 
-                                  sex = "male", ceradsc_condition = c("1", "4"))
+preprocessed_1 <- process_data(data$counts, data$metadata,
+                                  condition_column = "ceradsc",
+                                  sex_condition = "male", ceradsc_condition = c("1", "4"))
+table(preprocessed_1$metadata$sex)
+table(preprocessed_1$metadata$ceradsc)
 
 # DEA control males vs AD males
 de_results_1 <- run_deseq(preprocessed_1$counts, preprocessed_1$metadata, condition_column = "ceradsc")
@@ -434,10 +447,12 @@ if (!is.null(GSEA_1$simatrix_MF)) {
 cat("########## Control female vs AD females  ##########")
 
 #Pre-processing data
-
-preprocessed_0 <- preprocess_data(data$counts, data$metadata, 
-                                  condition_column = "ceradsc", 
-                                  sex = "female", ceradsc_condition = c("1", "4"))
+# 
+preprocessed_0 <- process_data(data$counts, data$metadata,
+                                  condition_column = "ceradsc",
+                                  sex_condition = "female", ceradsc_condition = c("1", "4"))
+table(preprocessed_0$metadata$sex)
+table(preprocessed_0$metadata$ceradsc)
 
 # DEA Control female vs AD females
 de_results_0 <- run_deseq(preprocessed_0$counts, preprocessed_0$metadata, condition_column = "ceradsc")
@@ -505,9 +520,11 @@ if (!is.null(GSEA_0$simatrix_MF)) {
 cat("########## AD females vs AD males  #######\n")
 
 # Data pre-process
-preprocessed_AD <- preprocess_data(data$counts, data$metadata,
+preprocessed_AD <- process_data(data$counts, data$metadata,
                                    condition_column = "sex", 
                                    sex = c("female", "male"), ceradsc_condition = "1")
+table(preprocessed_AD$metadata$sex)
+table(preprocessed_AD$metadata$ceradsc)
 
 # DEA Control female vs AD females
 de_results_AD <- run_deseq(preprocessed_AD$counts, preprocessed_AD$metadata, condition_column = "sex")
@@ -570,4 +587,30 @@ if (!is.null(GSEA_AD$simatrix_MF)) {
   message("No enriched terms found for MF.")
 }
 
+#Table for IPA
+
+# Crear una función para renombrar las columnas excepto "ensembl_gene_id"
+rename_columns <- function(df, suffix) {
+  colnames(df)[-1] <- paste0(colnames(df)[-1], "_", suffix)
+  return(df)
+}
+
+# Renombrar las columnas para cada tabla
+IPA_0 <- rename_columns(DEGS_0$res.df, paste0(brain_area, "_0"))
+IPA_1 <- rename_columns(DEGS_1$res.df,  paste0(brain_area, "_1"))
+IPA_AD <- rename_columns(DEGS_AD$res.df,  paste0(brain_area, "_AD"))
+
+IPA <- IPA_0 %>% 
+  left_join(IPA_1) %>% 
+  left_join(IPA_AD)
+
+IPA <- IPA %>%
+  filter(complete.cases(dplyr::select(., starts_with("log2FoldChange"), starts_with("padj"))))
+
+#Save table for IPA
+
+vroom::vroom_write(IPA,
+                   file = paste0(brain_area, "_IPA_table.txt") )
+
 cat("END ----")
+cat("Elapsed time:", Sys.time() - time, "hours")

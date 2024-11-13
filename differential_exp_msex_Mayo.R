@@ -18,7 +18,7 @@ pacman::p_load("tidyverse",
                "org.Hs.eg.db",
                "fgsea", 
                "enrichplot")
-
+time <- Sys.time()
 #Args
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -27,6 +27,12 @@ counts <- args[1]
 metadata <- args[2]
 brain_area <- args[3]
 brain_area <- as.character(brain_area)
+
+
+counts <- readRDS("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_rawcounts_TC.rds") %>% as.data.frame()
+metadata <- vroom::vroom("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_metadata_TC.txt")
+brain_area <- "TC_Mayo"
+tissue_batch_correction <- FALSE
 
 # Set seed
 set.seed(10)
@@ -74,10 +80,15 @@ del_dupl <- function(counts) {
   return(counts)
 }
 
+
 #Pre-process data
 
-preprocess_data <- function(counts, metadata, condition_column, sex, diagnosis_condition) {
-  counts <- counts[-c(1:4),]  # Remove the first four rows
+preprocess_data <- function(counts, metadata) {
+  print(dim(metadata))
+  print(dim(counts))
+  counts <- counts[-c(1:4), ]
+  print(dim(counts))
+  
   counts <- counts %>% mutate(feature = str_remove(feature, "\\..*$"))
   counts <- del_dupl(counts)
   rownames(counts) <- NULL
@@ -87,21 +98,79 @@ preprocess_data <- function(counts, metadata, condition_column, sex, diagnosis_c
   metadata <- metadata %>% mutate(diagnosis = factor(diagnosis))
   
   # Filter metadata based on conditions
-  metadata <- metadata %>% filter(exclude != TRUE)
-  metadata <- metadata %>% filter(if_all(c(diagnosis, sex), ~ !is.na(.)))
-  metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
-  metadata <- metadata %>% filter(sex %in% sex)
-  metadata <- metadata %>% filter(diagnosis %in% diagnosis_condition)
+  metadata <- metadata %>% filter(exclude == FALSE)
   
-  #Counts
   
-  metadata <- metadata[metadata$specimenID %in% colnames(counts), ]
+  # Filtrar metadata antes de aplicar la corrección de lote
+  if ("sequencingBatch" %in% colnames(metadata)) {
+    metadata <- metadata[!is.na(metadata$sequencingBatch), ]
+  }
+  print(dim(metadata))
+  
+  if ("exclude" %in% colnames(metadata)) {
+    metadata <- metadata[metadata$exclude != TRUE | is.na(metadata$exclude), ]
+  }
+  print(dim(metadata))
+  
+  specimenIDs_in_counts <- colnames(counts) 
+  metadata <- metadata %>%
+    dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  print(dim(metadata))
+  
+  specimenIDs <- metadata$specimenID
+  counts <- counts %>% 
+    dplyr::select(c(1, any_of(specimenIDs)))
+  counts <- counts[rowSums(counts) != 0, ]
+  print(dim(counts))
+  
+  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  metadata <- metadata %>% dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  print(dim(metadata))
+  return(list(counts = counts, metadata = metadata))
+}
+
+#Process data 
+
+process_data <- function(counts, metadata, condition_column, sex_condition, diagnosis_condition) {
+  metadata <- metadata %>% filter(!is.na(!!sym(condition_column))) %>% 
+    filter(sex %in% sex_condition) %>% 
+    filter(diagnosis %in% diagnosis_condition)
   
   # Select columns in counts that match specimenID in metadata
   counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
   
   return(list(counts = counts, metadata = metadata))
 }
+
+# 
+# #Pre-process data
+# 
+# preprocess_data <- function(counts, metadata, condition_column, sex, diagnosis_condition) {
+#   counts <- counts[-c(1:4),]  # Remove the first four rows
+#   counts <- counts %>% mutate(feature = str_remove(feature, "\\..*$"))
+#   counts <- del_dupl(counts)
+#   rownames(counts) <- NULL
+#   counts <- counts %>% column_to_rownames(var = "feature")
+#   
+#   # Ensure diagnosis is treated as a factor
+#   metadata <- metadata %>% mutate(diagnosis = factor(diagnosis))
+#   
+#   # Filter metadata based on conditions
+#   metadata <- metadata %>% filter(exclude != TRUE)
+#   metadata <- metadata %>% filter(if_all(c(diagnosis, sex), ~ !is.na(.)))
+#   metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
+#   metadata <- metadata %>% filter(sex %in% sex)
+#   metadata <- metadata %>% filter(diagnosis %in% diagnosis_condition)
+#   
+#   #Counts
+#   
+#   metadata <- metadata[metadata$specimenID %in% colnames(counts), ]
+#   
+#   # Select columns in counts that match specimenID in metadata
+#   counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
+#   
+#   return(list(counts = counts, metadata = metadata))
+# }
 
 #Run deseq
 
@@ -207,10 +276,10 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
   
   # Calcula los valores de baseMean por condición
-  baseMean_4 <- rowMeans(normcounts[, coldata$ceradsc == contrast_control]) %>% as.data.frame()
+  baseMean_4 <- rowMeans(normcounts[, coldata$diagnosis == contrast_control]) %>% as.data.frame()
   colnames(baseMean_4) <- paste0("baseMean_", contrast_control)
   
-  baseMean_1 <- rowMeans(normcounts[, coldata$ceradsc == contrast_problem]) %>% as.data.frame()
+  baseMean_1 <- rowMeans(normcounts[, coldata$diagnosis == contrast_problem]) %>% as.data.frame()
   colnames(baseMean_1) <- paste0("baseMean_", contrast_problem)
   
   baseMean_genes <- cbind(baseMean_4, baseMean_1)
@@ -228,14 +297,6 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   
   # For non-DEGs, delabel will be NA or empty
   res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
-  
-  # Modify column names with label and brain_area for res.df
-  new_colnames_res_df <- paste0(colnames(res.df)[-1], "_", label, "_", brain_area)
-  colnames(res.df)[-1] <- new_colnames_res_df
-  
-  # Modify column names with label and brain_area for DEGS
-  new_colnames_DEGS <- paste0(colnames(DEGS)[-1], "_", label, "_", brain_area)
-  colnames(DEGS)[-1] <- new_colnames_DEGS
   
   # Return the result
   return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
@@ -385,14 +446,18 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 # Load data
 data <- load_data()
 
-####### Control male vs AD males ##########
+data<- preprocess_data(counts, metadata = metadata)
+
+####### Controlcounts####### Control male vs AD males ##########
 
 cat("####### Control male vs AD males ##########")
 
 # Pre-proces data, filter by condition and sex
-preprocessed_1 <- preprocess_data(data$counts, data$metadata, 
+preprocessed_1 <- process_data(data$counts, data$metadata, 
                                   condition_column = "diagnosis", 
                                   sex = "male", diagnosis_condition = c("Alzheimer Disease", "control"))
+table(preprocessed_1$metadata$sex)
+table(preprocessed_1$metadata$diagnosis)
 
 # DEA control males vs AD males
 de_results_1 <- run_deseq(preprocessed_1$counts, preprocessed_1$metadata, condition_column = "diagnosis")
@@ -459,9 +524,11 @@ cat("########## Control female vs AD females  ##########")
 
 #Pre-processing data
 
-preprocessed_0 <- preprocess_data(data$counts, data$metadata, 
+preprocessed_0 <- process_data(data$counts, data$metadata, 
                                   condition_column = "diagnosis", 
                                   sex = "female", diagnosis_condition = c("Alzheimer Disease", "control"))
+table(preprocessed_0$metadata$sex)
+table(preprocessed_0$metadata$diagnosis)
 
 # DEA Control female vs AD females
 de_results_0 <- run_deseq(preprocessed_0$counts, preprocessed_0$metadata, condition_column = "diagnosis")
@@ -529,10 +596,12 @@ if (!is.null(GSEA_0$simatrix_MF)) {
 cat("########## AD females vs AD males  #######\n")
 
 # Data pre-process
-preprocessed_AD <- preprocess_data(data$counts, data$metadata,
+preprocessed_AD <- process_data(data$counts, data$metadata,
                                    condition_column = "sex", 
                                    sex = c("female", "male"), 
                                    diagnosis_condition = "Alzheimer Disease")
+table(preprocessed_AD$metadata$sex)
+table(preprocessed_AD$metadata$diagnosis)
 
 # DEA Control female vs AD females
 de_results_AD <- run_deseq(preprocessed_AD$counts, preprocessed_AD$metadata, condition_column = "sex")
@@ -594,5 +663,35 @@ if (!is.null(GSEA_AD$simatrix_MF)) {
 } else {
   message("No enriched terms found for MF.")
 }
+
+#Table for IPA
+
+# Crear una función para renombrar las columnas excepto "ensembl_gene_id"
+rename_columns <- function(df, suffix) {
+  colnames(df)[-1] <- paste0(colnames(df)[-1], "_", suffix)
+  return(df)
+}
+
+# Renombrar las columnas para cada tabla
+IPA_0 <- rename_columns(DEGS_0$res.df, paste0(brain_area, "_0"))
+IPA_1 <- rename_columns(DEGS_1$res.df,  paste0(brain_area, "_1"))
+IPA_AD <- rename_columns(DEGS_AD$res.df,  paste0(brain_area, "_AD"))
+
+IPA <- IPA_0 %>% 
+  left_join(IPA_1) %>% 
+  left_join(IPA_AD)
+
+dim(IPA)
+
+IPA <- IPA %>%
+  filter(complete.cases(dplyr::select(., starts_with("log2FoldChange"), starts_with("padj"))))
+dim(IPA)
+
+#Save table for IPA
+
+vroom::vroom_write(IPA,
+                   file = paste0(brain_area, "_IPA_table.txt") )
+
+cat("Elapsed time:", Sys.time() - time, "seconds")
 
 cat("END ----")

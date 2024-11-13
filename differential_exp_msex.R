@@ -33,10 +33,10 @@ metadata <- args[2]
 brain_area <- args[3]
 tissue_batch_correction <- args[4] #boolean
 
- counts <- readRDS("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds") %>% as.data.frame()
- metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt")
- brain_area <- "FRONTAL_ROSMAP"
- tissue_batch_correction <- TRUE
+counts <- readRDS("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds") %>% as.data.frame()
+metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt")
+brain_area <- "FRONTAL_ROSMAP"
+tissue_batch_correction <- TRUE
 
 cat("Define functions \n")
 
@@ -53,7 +53,7 @@ load_data <- function(args) {
 
 # Define function to convert from ENSMBL to SYMBOL
 
-ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+ensembl <- useMart("ensembl", dataset= "hsapiens_gene_ensembl")
 
 convert_ens_to_symbol <- function(ensembl_ids) {
   trad <- getBM(attributes = c("ensembl_gene_id", "external_gene_name"),
@@ -127,7 +127,6 @@ preprocess_data <- function(counts, metadata) {
   specimenIDs <- metadata$specimenID
   counts <- counts %>% 
     dplyr::select(c(1, any_of(specimenIDs)))
-  #counts <- counts[rowSums(counts) != 0, ]
   print(dim(counts))
   
   specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
@@ -152,7 +151,7 @@ process_data <- function(counts, metadata, condition_column, sex, ceradsc_condit
 
 #Run deseq
 
-run_deseq <- function(counts, metadata, condition_column) {
+run_deseq <- function(counts, metadata, condition_column, control_by_sex) {
   coldata <- as.data.frame(colnames(counts))
   colnames(coldata) <- "specimenID"
   
@@ -170,21 +169,23 @@ run_deseq <- function(counts, metadata, condition_column) {
   coldata$tissue <- as.factor(coldata$tissue)
   coldata$ceradsc <- as.factor(coldata$ceradsc)
   
-  # Verificar si 'tissue' tiene más de un nivel
-  # if (length(unique(coldata$tissue)) > 1) {
-  #   design_formula <- as.formula(paste("~ sequencingBatch + tissue +", condition_column))
-  # } else {
-  #   design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
-  # }
+  #Verificar si 'tissue' tiene más de un nivel
+  if (length(unique(coldata$tissue)) > 1) {
+    design_formula <- as.formula(paste("~ sequencingBatch + tissue +", condition_column))
+  } else {
+    design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
+  }
+  
+  #control_by_sex
   
   design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
-  
-  # dds <- DESeqDataSetFromMatrix(countData = counts, 
-  #                                colData = coldata,
-  #                                design = design_formula)
-  # dds <- DESeq(dds)
-  
-  return(list(#dds = dds, 
+
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                 colData = coldata,
+                                 design = design_formula)
+  dds <- DESeq(dds)
+
+  return(list(dds = dds, 
               coldata = coldata, 
               design_formula = design_formula))
 }
@@ -393,18 +394,11 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 
 cat("# Load data")
 data <- load_data()
-counts <- data$counts
-metadata <- data$metadata
+preprocessed_data <- preprocess_data(counts, metadata = metadata)
 
 cat("Dim data:", dim(counts), "\n")
 
 cat("Dim metadata:", dim(metadata), "\n")
-
-#only for ROSMAP
-
-cat("#Pre-process data")
-
-preprocessed_data <- preprocess_data(counts = counts, metadata = metadata)
 
 ####### Control male vs AD males ##########
 
