@@ -184,11 +184,11 @@ dim(counts_PCC_ROSMAP)
 # # 
 # # #Counts for  Head of caudate nucleus
 #
-saveRDS(counts_HCN_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds")
+# saveRDS(counts_HCN_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds")
 # # 
 # # #Counts for posterior cingulate cortex
 #
-saveRDS(counts_PCC_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds")
+# saveRDS(counts_PCC_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds")
 #
 # # #Counts for Frontal Cortex
 # # 
@@ -244,7 +244,7 @@ sum_rosmap_cerad <- sum_rosmap_cerad %>%
     cerad_description = recode(as.character(ceradsc), !!!ceradscore)
   )
 
-# Crear el gráfico
+#Plot
 
 sum_rosmap_cerad <- metadata_ROSMAP[,c("tissue", "ceradsc")]
 
@@ -267,7 +267,7 @@ sum_rosmap_cerad <- sum_rosmap_cerad %>%
     cerad_description = recode(as.character(ceradsc), !!!ceradscore)
   )
 
-# Crear el gráfico
+#Plot
 
 sum_rosmap_cerad.p <-ggplot(sum_rosmap_cerad, aes(x = tissue, y = count, fill = cerad_description)) +
   geom_bar(stat = "identity") +
@@ -286,14 +286,14 @@ counts_FRONTAL_ROSMAP <- counts_DLPFC_ROSMAP %>% left_join(counts_FC_ROSMAP, by 
 dim(counts_FRONTAL_ROSMAP)
 
 metadata_FRONTAL_ROSMAP <- metadata_ROSMAP %>% filter(specimenID %in% colnames(counts_FRONTAL_ROSMAP)[-1])
+dim(metadata_FRONTAL_ROSMAP)
 
-# vroom::vroom_write(metadata_FRONTAL_ROSMAP,
-#                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt")
+vroom::vroom_write(metadata_FRONTAL_ROSMAP,
+                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt")
 
 # #Counts for FRONTAL
 #
-#saveRDS(counts_FRONTAL_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds")
-
+saveRDS(counts_FRONTAL_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds")
 
 ##################################### MSBB ##################################### 
 
@@ -376,25 +376,22 @@ names(metadata_tissue_MSBB) <- tissues_MSBB
 #Save metadata --- --- 
 
 #STG
-vroom::vroom_write(metadata_tissue_MSBB[["superior temporal gyrus"]],
-                   file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/metadata/MSBB_RNAseq_metadata_STG.txt")
-#PHG
-vroom::vroom_write(metadata_tissue_MSBB[["parahippocampal gyrus"]],
-                   file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_metadata_PHG.txt")
-
+# vroom::vroom_write(metadata_tissue_MSBB[["superior temporal gyrus"]],
+#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/metadata/MSBB_RNAseq_metadata_STG.txt")
+# #PHG
+# vroom::vroom_write(metadata_tissue_MSBB[["parahippocampal gyrus"]],
+#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_metadata_PHG.txt")
 #FP
-
-vroom::vroom_write(metadata_tissue_MSBB[["frontal pole"]],
-                   file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_metadata_FP.txt")
-
+# 
+# vroom::vroom_write(metadata_tissue_MSBB[["frontal pole"]],
+#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_metadata_FP.txt")
 #inferior frontal gyrus IFG
-
-vroom::vroom_write(metadata_tissue_MSBB[["inferior frontal gyrus"]],
-                   file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_metadata_IFG.txt")
-#PFC
-
-vroom::vroom_write(metadata_tissue_MSBB[["prefrontal cortex"]],
-                   file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_metadata_PFC.txt")
+# vroom::vroom_write(metadata_tissue_MSBB[["inferior frontal gyrus"]],
+#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_metadata_IFG.txt")
+# #PFC
+# 
+# vroom::vroom_write(metadata_tissue_MSBB[["prefrontal cortex"]],
+#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_metadata_PFC.txt")
 
 #Read expression data --- --- 
 
@@ -469,7 +466,7 @@ sum_msbb <- sum_msbb %>%
     cerad_description = recode(as.character(ceradsc), !!!ceradscore)
   )
 
-# Crear el gráfico
+#Plot
 
 sum_msbb.p <- ggplot(sum_msbb, aes(x = tissue, y = count, fill = cerad_description)) +
   geom_bar(stat = "identity") +
@@ -494,8 +491,8 @@ metadata_FRONTAL_MSBB <- metadata_MSBB %>% filter(specimenID %in% colnames(count
 
 #metadata for FRONTAL_MSBB
 
-vroom::vroom_write(metadata_FRONTAL_MSBB,
-                   file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt")
+# vroom::vroom_write(metadata_FRONTAL_MSBB,
+#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt")
 
 ##################################### Mayo Clinic ##################################### 
 

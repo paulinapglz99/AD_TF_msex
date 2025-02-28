@@ -14,7 +14,7 @@ pacman::p_load("tidyverse",
 
 #FUNCTIONS --- ---
 
-#Function to filter columns of a count matrix according to specimenIDs in the metadata
+#Filter columns of a count matrix according to specimenIDs in the metadata
 
 filter_by_metadata <- function(counts, metadata) {
   specimenIDs <- metadata$specimenID
@@ -24,9 +24,9 @@ filter_by_metadata <- function(counts, metadata) {
   return(filtered_counts)
 }
 
-# Function to filter metadata according to the specimenIDs in the count matrix
+#Filter metadata according to the specimenIDs in the count matrix
 filter_metadata_by_counts <- function(metadata, counts) {
-  specimenIDs_in_counts <- colnames(counts)[-1]  # Asumiendo que la primera columna no es un specimenID
+  specimenIDs_in_counts <- colnames(counts)[-1]  #First col is not specimenID
   filtered_metadata <- metadata %>%
              dplyr::filter(specimenID %in% specimenIDs_in_counts)
   
