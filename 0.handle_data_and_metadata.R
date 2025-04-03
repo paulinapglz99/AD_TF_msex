@@ -11,11 +11,12 @@
 pacman::p_load("dplyr",
                "ggplot2", 
                "viridis", 
-               "gridExtra")
+               "gridExtra", 
+               "vroom")
 
 #Functions --- ---
  
-# Function to filter and summarize data by brain region
+#Filter and summarize data by brain region
 
 summarize_by_tissue <- function(metadata, tissue_name) {
   tissue_data <- metadata %>% filter(tissue == tissue_name)
@@ -75,57 +76,6 @@ tissues_ROSMAP <- unique(metadata_ROSMAP$tissue)
 metadata_tissue_ROSMAP <- lapply(tissues_ROSMAP, 
                                  function(tissue) summarize_by_tissue(metadata_ROSMAP, tissue))
 names(metadata_tissue_ROSMAP) <- tissues_ROSMAP
-# NIA-Reagan diagnosis table:
-#   
-#   1  2  3  4 
-# 41 41 11 30 
-# Metadata dim temporal cortex:  125 42 
-# NIA-Reagan diagnosis table:
-#   
-#   1  2  3  4 
-# 43 41 11 30 
-# Metadata dim dorsolateral prefrontal cortex:  1141 42 
-# NIA-Reagan diagnosis table:
-#   
-#   1    2    3    4 <NA> 
-#   354  409   99  277    2 
-# Metadata dim Head of caudate nucleus:  749 42 
-# NIA-Reagan diagnosis table:
-#   
-#   1   2   3   4 
-# 229 265  70 185 
-# Metadata dim posterior cingulate cortex:  671 42 
-# NIA-Reagan diagnosis table:
-#   
-#   1   2   3   4 
-# 194 239  60 178  
-
-#Save metadata --- --- 
-
-#Metadata for frontal cortex (FC)
-# 
-# vroom::vroom_write(metadata_tissue_ROSMAP[["frontal cortex"]],
-#                    file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FC/RNA_seq_metadata_FC.txt")
-# #
-# # #Metadata for temporal cortex (TC)
-# #
-# vroom::vroom_write(metadata_tissue_ROSMAP[["temporal cortex"]],
-#                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/TC/RNA_seq_metadata_TC.txt")
-# 
-# #Metadata Dorsolateral Prefrontal Cortex (DLPFC)
-# 
-# vroom::vroom_write(metadata_tissue_ROSMAP[["dorsolateral prefrontal cortex"]],
-#                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/DLPFC/RNA_seq_metadata_DLPFC.txt")
-# 
-# #Metadata for Head of caudate nucleus (HCN)
-# 
-# vroom::vroom_write(metadata_tissue_ROSMAP[["Head of caudate nucleus"]],
-#                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/HCN/RNA_seq_metadata_HCN.txt")
-# 
-# #Metadata for posterior cingulate cortex (PCC)
-# 
-vroom::vroom_write(metadata_tissue_ROSMAP[["posterior cingulate cortex"]],
-                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/PCC/RNA_seq_metadata_PCC.txt")
 
 #Read expression data, there's 4 count archives --- ---
 
@@ -176,27 +126,55 @@ counts_PCC_ROSMAP <- counts_ROSMAP[, c(colnames(counts_ROSMAP) %in% metadata_tis
 dim(counts_PCC_ROSMAP)
 #[1] 60607   672
 
-#Save count data for ROSMAP ---- ---
+counts_FRONTAL_ROSMAP <- counts_DLPFC_ROSMAP %>% left_join(counts_FC_ROSMAP, by = "feature")
+dim(counts_FRONTAL_ROSMAP)
+#[1] 60607  1265
 
-#Counts for Dorsoral Prefrontal Cortex
-# # 
-# saveRDS(counts_DLPFC_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/DLFPC/full_counts/ROSMAP_RNAseq_rawcounts_DLPFC.rds")
-# # 
-# # #Counts for  Head of caudate nucleus
-#
-# saveRDS(counts_HCN_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds")
-# # 
-# # #Counts for posterior cingulate cortex
-#
-# saveRDS(counts_PCC_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds")
-#
-# # #Counts for Frontal Cortex
-# # 
-# saveRDS(counts_FC_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FC/ROSMAP_RNAseq_rawcounts_FC.rds")
-# # 
-# # #Counts for Temporal cortex
-# # 
-# saveRDS(counts_TC_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/TC/ROSMAP_RNAseq_rawcounts_TC.rds")
+#Save count data for ROSMAP ---- ---
+# counts_list <- list(
+#   "DLPFC" = counts_DLPFC_ROSMAP,
+#   "HCN" = counts_HCN_ROSMAP,
+#   "PCC" = counts_PCC_ROSMAP,
+#   "FC" = counts_FC_ROSMAP,
+#   "TC" = counts_TC_ROSMAP
+# )
+# 
+# #Save for each one
+# for (tissue in names(counts_list)) {
+#   file_path <- paste0("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/",
+#                       tissue, "/ROSMAP_RNAseq_rawcounts_", tissue, ".rds")
+#   
+#   saveRDS(counts_list[[tissue]], file = file_path)
+# }
+
+#Counts for FRONTAL
+
+saveRDS(counts_FRONTAL_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds")
+
+#Save metadata for ROSMAP --- --- 
+
+metadata_FRONTAL_ROSMAP <- metadata_ROSMAP %>% filter(specimenID %in% colnames(counts_FRONTAL_ROSMAP)[-1])
+dim(metadata_FRONTAL_ROSMAP)
+
+# tissues <- c("frontal cortex" = "FC", 
+#              "temporal cortex" = "TC", 
+#              "dorsolateral prefrontal cortex" = "DLPFC", 
+#              "Head of caudate nucleus" = "HCN", 
+#              "posterior cingulate cortex" = "PCC"
+#             # "FRONTAL_ROSMAP" =  "FRONTAL_ROSMAP"
+#              )
+# 
+# for (tissue in names(tissues)) {
+#   file_path <- paste0("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/",
+#                       tissues[tissue], "/RNA_seq_metadata_", tissues[tissue], ".csv")
+#   
+#   vroom::vroom_write(metadata_tissue_ROSMAP[[tissue]], file = file_path)
+# }
+# 
+# #FRONTAL_ROSMAP
+# 
+# vroom::vroom_write(metadata_FRONTAL_ROSMAP,
+#                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.csv")
 
 #Summarize ROSMAP --- ---
 
@@ -279,21 +257,6 @@ sum_rosmap_cerad.p <-ggplot(sum_rosmap_cerad, aes(x = tissue, y = count, fill = 
   scale_color_viridis()
 
 sum_rosmap_cerad.p
-
-#PETITION
-
-counts_FRONTAL_ROSMAP <- counts_DLPFC_ROSMAP %>% left_join(counts_FC_ROSMAP, by = "feature")
-dim(counts_FRONTAL_ROSMAP)
-
-metadata_FRONTAL_ROSMAP <- metadata_ROSMAP %>% filter(specimenID %in% colnames(counts_FRONTAL_ROSMAP)[-1])
-dim(metadata_FRONTAL_ROSMAP)
-
-vroom::vroom_write(metadata_FRONTAL_ROSMAP,
-                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt")
-
-# #Counts for FRONTAL
-#
-saveRDS(counts_FRONTAL_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds")
 
 ##################################### MSBB ##################################### 
 

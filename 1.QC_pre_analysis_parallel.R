@@ -33,30 +33,29 @@ filter_metadata_by_counts <- function(metadata, counts) {
   return(filtered_metadata)
 }
 
-# Delete duplicates
+#Delete duplicate genes
 
 del_dupl <- function(counts) {
-  # Verificar genes repetidos
+  #Check for duplicated genes
   repeated_values <- counts %>%
     group_by(feature) %>%
     filter(n() > 1) %>%
     distinct(feature) %>%
     pull(feature)
   
-  # Ver las filas duplicadas
+  #
   repeated_rows <- counts[counts$feature %in% repeated_values, ]
-  
-  # Ordenar y calcular la mediana de los valores duplicados
+  #Order and calculate meduab of duplicated values
   repeated_rows <- repeated_rows[order(repeated_rows$feature),]
   repeated_rows <- repeated_rows %>%
     group_by(feature) %>%
     summarize(across(everything(), median, na.rm = TRUE))
   
-  # Eliminar las filas duplicadas y agregar las filas con la mediana calculada
+  #Delete duplicate columns and add medians
   counts <- counts %>% filter(!feature %in% repeated_rows$feature)
   counts <- bind_rows(counts, repeated_rows)
   
-  # Convertir las columnas seleccionadas a enteros
+  #Discretize modified columns
   counts <- counts %>% mutate(across(-feature, as.integer))
   
   return(counts)
@@ -65,24 +64,33 @@ del_dupl <- function(counts) {
 #Get metadata --- ---
 
 #Obtain factors from metadata
+
+#We choose
+# DLPFC-FP ROSMAP [cm, dm, cf, df]
+# HCN ROSMAP [cm, dm, cf, df]
+# PCC ROSMAP [cm, dm, cf, df]
+# CRB Mayo [cm, dm, cf, df]
+# TC Mayo [cm, dm, cf, df]
+
+
 metadata_files <- list(
   #FC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FC/RNA_seq_metadata_FC.txt",
   #TC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/TC/RNA_seq_metadata_TC.txt",
   #DLPFC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/DLPFC/RNA_seq_metadata_DLPFC.txt",
+  FRONTAL_ROSMAP = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt",
   HCN = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/HCN/RNA_seq_metadata_HCN.txt",
   PCC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/PCC/RNA_seq_metadata_PCC.txt",
-  FRONTAL_ROSMAP = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt",
   #FP_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_metadata_FP.txt",
   #IFG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_metadata_IFG.txt",
   #PFC_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_metadata_PFC.txt",
-  PHG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_metadata_PHG.txt",
-  STG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/metadata/MSBB_RNAseq_metadata_STG.txt",
-  FRONTAL_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt",
+  #PHG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_metadata_PHG.txt",
+  #STG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/metadata/MSBB_RNAseq_metadata_STG.txt",
+  #FRONTAL_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt",
   CRB_Mayo = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt",
   TC_Mayo = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_metadata_TC.txt"
 )
 
-# Leer todos los archivos de metadatos en una lista
+#Read metadata
 metadata <- lapply(metadata_files,  function(file) {
   vroom::vroom(file, delim = "\t")
 })
@@ -95,20 +103,20 @@ files <- list(
   #FC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FC/ROSMAP_RNAseq_rawcounts_FC.rds",
   #TC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/TC/ROSMAP_RNAseq_rawcounts_TC.rds",
   #DLPFC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/DLFPC/full_counts/ROSMAP_RNAseq_rawcounts_DLPFC.rds",
-  HCN = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds",
-  PCC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds",
-  FRONTAL_ROSMAP = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds",
+  #FRONTAL_ROSMAP = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds",
+  HCN = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds"
+  #PCC = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds",
   #FP_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_rawcounts_FP.rds",
   #IFG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_rawcounts_IFG.rds",
   #PFC_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_rawcounts_counts_PFC_MSBB.rds",
-  PHG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_rawcounts_PHG.rds",
-  STG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/MSBB_RNAseq_rawcounts_STG.rds",
-  FRONTAL_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds",
-  CRB_Mayo = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds",
-  TC_Mayo = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_rawcounts_TC.rds"
+  # PHG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_rawcounts_PHG.rds",
+  # STG_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/MSBB_RNAseq_rawcounts_STG.rds",
+  # FRONTAL_MSBB = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds",
+ # CRB_Mayo = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds",
+  #TC_Mayo = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_rawcounts_TC.rds"
 )
 
-# Leer todos los archivos en una lista
+# Read counts
 counts <- lapply(files, readRDS)
 counts <- lapply(counts, as.data.frame)
 names(counts) <- names(files)
