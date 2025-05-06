@@ -1,3 +1,5 @@
+#!/usr/bin/env Rscript
+
 #differential_exp_msex.R
 #This script performs Differential expression analyis for 3 types of comparisons
 #AD women vs control women
@@ -27,31 +29,34 @@ set.seed(10)
 #Args
 
 args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 4) {
+  stop("Error: Expected 4 arguments:\n 1. Path to counts file (.rds)\n 2. Path to metadata file (.txt or .csv)\n 3. Brain area name\n 4. Batch correction (TRUE or FALSE)", 
+       call. = FALSE)
+}
 
 counts <- args[1]
 metadata <- args[2]
 brain_area <- args[3]
 tissue_batch_correction <- args[4] #boolean
+#counts<- readRDS(file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds") %>% as.data.frame()
+# metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/HCN/RNA_seq_metadata_HCN.txt")
+# brain_area <- "HCN_ROSMAP"
+# tissue_batch_correction <- FALSE
 
-counts <- readRDS("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds") %>% as.data.frame()
-metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.txt")
-brain_area <- "FRONTAL_ROSMAP"
-tissue_batch_correction <- TRUE
-
-cat("Define functions \n")
+cat("#Define functions \n")
 
 #Load data
 
 load_data <- function(args) {
-  counts <- readRDS(file = args[1]) %>% as.data.frame()
+  counts <- readRDS(file = args[1]) #%>% as.data.frame()
   metadata <- vroom::vroom(file = args[2])
-  brain_area <- as.character(args[3])  # Asumiendo que brain_area es el tercer argumento
-  tissue_batch_correction <- as.logical(args[4])  # Si es un booleano
+  brain_area <- as.character(args[3])  #Text in ""
+  tissue_batch_correction <- as.logical(args[4])  #Boolean
   
   return(list(counts = counts, metadata = metadata))
 }
 
-# Define function to convert from ENSMBL to SYMBOL
+#Define function to convert from ENSMBL to SYMBOL
 
 ensembl <- useMart("ensembl", dataset= "hsapiens_gene_ensembl")
 
@@ -64,9 +69,9 @@ convert_ens_to_symbol <- function(ensembl_ids) {
   return(trad)
 }
 
-# Function to delete duplicates
+#Function to delete duplicates
 del_dupl <- function(counts) {
-    repeated_values <- counts %>%
+  repeated_values <- counts %>%
     group_by(feature) %>%
     filter(n() > 1) %>%
     distinct(feature) %>%
@@ -98,28 +103,28 @@ preprocess_data <- function(counts, metadata) {
   rownames(counts) <- NULL
   counts <- counts %>% column_to_rownames(var = "feature")
   
-  # Ensure ceradsc is treated as a factor
+  #Ensure ceradsc is treated as a factor
   metadata <- metadata %>% mutate(ceradsc = factor(ceradsc))
   
-  cat("# Filter metadata based on conditions")
+  cat("# Filter metadata based on conditions\n")
   if ("exclude" %in% colnames(metadata)) {
     metadata <- metadata[metadata$exclude != TRUE | is.na(metadata$exclude), ]
   }
   metadata <- metadata %>% filter(!is.na(ceradsc))
   print(dim(metadata))
   
-  cat("# Filter NAs in sequencingBatch")
+  cat("#Filter NAs in sequencingBatch\n")
   if ("sequencingBatch" %in% colnames(metadata)) {
     metadata <- metadata[!is.na(metadata$sequencingBatch), ]
   }
   print(dim(metadata))
   
-  # Eliminar el valor "0, 6, 7" si existe
+  #Remove value ‘0, 6, 7’ if it exists
   if ("0, 6, 7" %in% metadata$sequencingBatch) {
     metadata <- metadata %>% filter(sequencingBatch != "0, 6, 7")
   }
   
-  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  specimenIDs_in_counts <- colnames(counts)  #Assuming that the first column is not a specimenID
   metadata <- metadata %>%
     dplyr::filter(specimenID %in% specimenIDs_in_counts)
   print(dim(metadata))
@@ -129,7 +134,7 @@ preprocess_data <- function(counts, metadata) {
     dplyr::select(c(1, any_of(specimenIDs)))
   print(dim(counts))
   
-  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  specimenIDs_in_counts <- colnames(counts)  #Assuming that the first column is not a specimenID
   metadata <- metadata %>% dplyr::filter(specimenID %in% specimenIDs_in_counts)
   print(dim(metadata))
   return(list(counts = counts, metadata = metadata))
@@ -157,34 +162,34 @@ run_deseq <- function(counts, metadata, condition_column, control_by_sex) {
   
   coldata <- coldata %>%
     left_join(metadata, by = "specimenID") %>%
-    dplyr::select("specimenID", "sequencingBatch","msex", "ceradsc", "tissue")
+    dplyr::select("specimenID", "sequencingBatch","msex", "ceradsc", "tissue", "RIN")
   
-  # Convert the condition column to a factor, in case it's not
+  #Convert the condition column to a factor, in case it's not
   coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
   
-  # # Remove empty levels from factors in coldata
+  #Remove empty levels from factors in coldata
   coldata <- droplevels(coldata)
   
   coldata$sequencingBatch <- as.factor(coldata$sequencingBatch)
   coldata$tissue <- as.factor(coldata$tissue)
   coldata$ceradsc <- as.factor(coldata$ceradsc)
   
-  #Verificar si 'tissue' tiene más de un nivel
+  #Check if “tissue” has more than one level
   if (length(unique(coldata$tissue)) > 1) {
-    design_formula <- as.formula(paste("~ sequencingBatch + tissue +", condition_column))
+    design_formula <- as.formula(paste("~ sequencingBatch + tissue + RIN + msex +", condition_column))
   } else {
-    design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
+    design_formula <- as.formula(paste("~ sequencingBatch + RIN + msex +", condition_column))
   }
   
   #control_by_sex
   
   design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
-
+  
   dds <- DESeqDataSetFromMatrix(countData = counts,
-                                 colData = coldata,
-                                 design = design_formula)
+                                colData = coldata,
+                                design = design_formula)
   dds <- DESeq(dds)
-
+  
   return(list(dds = dds, 
               coldata = coldata, 
               design_formula = design_formula))
@@ -218,7 +223,7 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   # Extract counts normalized 
   normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
   
-  # Calcula los valores de baseMean por condición
+  #baseMean per condition
   baseMean_4 <- rowMeans(normcounts[, coldata$ceradsc == contrast_control]) %>% as.data.frame()
   colnames(baseMean_4) <- paste0("baseMean_", contrast_control)
   
@@ -242,12 +247,12 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
   
   # Modify column names with label and brain_area for res.df
-  new_colnames_res_df <- paste0(colnames(res.df)[-1], "_", label, "_", brain_area)
-  colnames(res.df)[-1] <- new_colnames_res_df
+  # new_colnames_res_df <- paste0(colnames(res.df)[-1], "_", label, "_", brain_area)
+  # colnames(res.df)[-1] <- new_colnames_res_df
   
   # Modify column names with label and brain_area for DEGS
-  new_colnames_DEGS <- paste0(colnames(DEGS)[-1], "_", label, "_", brain_area)
-  colnames(DEGS)[-1] <- new_colnames_DEGS
+  # new_colnames_DEGS <- paste0(colnames(DEGS)[-1], "_", label, "_", brain_area)
+  # colnames(DEGS)[-1] <- new_colnames_DEGS
   
   # Return the result
   return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
@@ -255,69 +260,62 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
 
 #Visualize results
 
-create_volcano_plot <- function(res.df, condition_compared, brain_region, output_file) {
-
+create_volcano_plot <- function(res.df, condition_compared, brain_region, output_file, log2fc) {
+  
   vplot <- ggplot(data=res.df, aes(x=log2FoldChange, y= -log10(padj),  col = diffexpressed, label = delabel)) +
     geom_point() +
-    geom_vline(xintercept=c(0.5, -0.5), col="red") + 
-    geom_hline(yintercept=-log10(0.05), col="red") + 
+    geom_vline(xintercept=c(log2fc, -log2fc), col="red") + 
+    geom_hline(yintercept=-log10(1), col="red") + 
     scale_color_manual(values=c("#4E8098", "gray", "#A31621")) +
     theme_minimal() +
     geom_text_repel(max.overlaps = 25) +
     labs(title = "Differential expression", 
          subtitle = paste0(condition_compared, " using CERAD score as criteria \n in ", brain_region))
   
-  ggsave(output_file, plot = vplot, width = 11, height = 10, units = "in", dpi = 300)
+  ggsave(output_file, plot = vplot, width = 11, height = 15, units = "in", dpi = 300)
 }
 
 #Create heatmap
 create_heatmap_vst <- function(dds, geneNames, output_file) {
-  # Verificar si hay suficientes DEGs para generar el heatmap
+  #Verify if there are enough DEGS to plot the heatmap
   if (length(geneNames) < 2) {
-    message("No hay suficientes DEGs para generar un heatmap. El proceso no se ejecutará.")
+    message("There are not enough DEGs to generate a heatmap. The process will not run.")
     return(NULL)
   } else{
-  
-  # Aplicar la transformación de variancia estabilizada (vst)
-  vst_data <- vst(dds, blind = FALSE)
-  
-  # Normalizar las cuentas regularizadas por filas
-  Z <- t(scale(t(assay(vst_data))))
-  
-  # Filtrar la matriz Z solo para los genes que están en geneNames
-  Z_filtered <- Z[rownames(Z) %in% geneNames, ]
-  
-  # Asegurarse de que los nombres de los genes coinciden
-  geneNames_filtered <- geneNames[geneNames %in% rownames(Z_filtered)]
-  
-  # Convertir la matriz a formato apropiado para heatmap
-  mat_gn <- Z_filtered[geneNames_filtered, , drop = FALSE]  # Filtrar solo los genes de interés
-  rownames(mat_gn) <- geneNames_filtered  # Usar los nombres de los genes para las filas
-  
-  # Extraer las anotaciones de las columnas
-  my_sample_col <- as.data.frame(colData(dds))
-  my_sample_col <- my_sample_col[, c("ceradsc", "msex")]
-  
-  # Crear y guardar el heatmap directamente con pheatmap
-  pheatmap(mat_gn, 
-           name = "Row Z-Score", 
-           color = colorRampPalette(c("navy", "white", "firebrick3"))(50), 
-           clustering_distance_rows = "euclidean", 
-           clustering_method = "ward.D2", 
-           annotation_col = my_sample_col,
-           fontsize = 10, 
-           angle_col = 45,  # Ángulo de las etiquetas de columna
-           show_rownames = TRUE,
-           show_colnames = FALSE, 
-           filename = output_file)  # Guardar directamente el heatmap en el archivo
-} }
+    
+    #Apply the vst transformation
+    vst_data <- vst(dds, blind = FALSE)
+    #Normalize per row
+    Z <- t(scale(t(assay(vst_data))))
+    #Filter matrix Z
+    Z_filtered <- Z[rownames(Z) %in% geneNames, ]
+    geneNames_filtered <- geneNames[geneNames %in% rownames(Z_filtered)]
+    #Convert matrix to appropiate format for the heatmap
+    mat_gn <- Z_filtered[geneNames_filtered, , drop = FALSE]  #Only genes of interest
+    rownames(mat_gn) <- geneNames_filtered  #Use the names of genes for the rows
+    #Extract annotatoins from columns
+    my_sample_col <- as.data.frame(colData(dds))
+    my_sample_col <- my_sample_col[, c("ceradsc", "msex")]
+    #Create and save the heatmap directly with pheatmap
+    pheatmap(mat_gn, 
+             name = "Row Z-Score", 
+             color = colorRampPalette(c("navy", "white", "firebrick3"))(50), 
+             clustering_distance_rows = "euclidean", 
+             clustering_method = "ward.D2", 
+             annotation_col = my_sample_col,
+             fontsize = 10, 
+             angle_col = 45,  # Ángulo de las etiquetas de columna
+             show_rownames = TRUE,
+             show_colnames = FALSE, 
+             filename = output_file)  # Guardar directamente el heatmap en el archivo
+  } }
 
 #Plot MA 
 
 plot_MA <- function(res, output_MAplot){
   # Abrir dispositivo gráfico según la extensión del archivo
-  jpeg(output_MAplot, width = 11, height = 10, units = "in", res = 300)  # Guardar en formato PNG
-
+  jpeg(output_MAplot, width = 11, height = 15, units = "in", res = 300)
+  
   # Generar el MA plot
   plotMA(res, ylim=c(-2,2))
   
@@ -392,36 +390,32 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 
 ###### MAIN #####
 
-cat("# Load data")
+cat("# Load data \n")
 data <- load_data()
 preprocessed_data <- preprocess_data(counts, metadata = metadata)
-
-cat("Dim data:", dim(counts), "\n")
-
-cat("Dim metadata:", dim(metadata), "\n")
 
 ####### Control male vs AD males ##########
 
 cat("####### Control male vs AD males ##########")
 
-# Pre-proces data, filter by condition and sex
+#Pre-proces data, filter by condition and sex
 preprocessed_1 <- process_data(preprocessed_data$counts, preprocessed_data$metadata, 
                                   condition_column = "ceradsc", 
                                   sex = "1",  # i want only males
                                   ceradsc_condition = c("1", "4")) #from both conditions to compare
 
-# DEA control males vs AD males
+#DEA control males vs AD males
 de_results_1 <- run_deseq(preprocessed_1$counts, preprocessed_1$metadata, condition_column = "ceradsc")
 
-# Prueba de la función
+#Results males
 DEGS_1 <-extract_DEGS(de_results_1$dds, 
              condition_column = "ceradsc", 
              coldata = de_results_1$coldata, 
              padj.v = 0.05,
-             log2FoldChange.v = 0.5, 
+             log2FoldChange.v = 1, 
              contrast_problem = "1",
              contrast_control = "4",
-             label = "c_male_vs_AD_male",
+          #   label = "c_male_vs_AD_male",
              brain_area = brain_area)
 
 #Save log2fold change full list 
@@ -435,6 +429,7 @@ vroom::vroom_write(DEGS_1$DEGS, file = paste0(brain_area, "_DEGS_control_male_vs
 #Save volcano plot
 
 create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD males",
+                    log2fc = 1,
                     brain_region = brain_area, 
                     output_file = paste0(brain_area, "_DEG_control_male_vs_AD_male_volcano_plot.jpg"))
 
@@ -447,7 +442,7 @@ create_heatmap_vst(dds = de_results_1$dds, geneNames = DEGS_1$DEGS$ensembl_gene_
 
 plot_MA(DEGS_1$res, output_MAplot = paste0(brain_area, "_DEG_control_male_vs_AD_male_MA_plot.jpg"))
 
-# Run GSEA for DEGS
+#Run GSEA for male DEGS
 DEGS.g_1 <- setNames(DEGS_1$res$log2FoldChange, rownames(DEGS_1$res))
 DEGS.g_1 <- sort(DEGS.g_1, decreasing = TRUE)
 
@@ -493,7 +488,7 @@ DEGS_0 <- extract_DEGS(de_results_0$dds,
              log2FoldChange.v = 0.5, 
              contrast_problem = "1",
              contrast_control = "4",
-             label = "c_female_vs_AD_female",
+             #label = "c_female_vs_AD_female",
              brain_area = brain_area)
 
 #Save log2fold change full list 
@@ -550,12 +545,12 @@ if (!is.null(GSEA_0$simatrix_MF)) {
 
 cat("########## AD females vs AD males  #######\n")
 
-# Data process
+#Data process
 preprocessed_AD <- process_data(preprocessed_data$counts, preprocessed_data$metadata,
                                    condition_column = "msex", 
                                    sex = c("0", "1"), ceradsc_condition = "1")
 
-# DEA Control female vs AD females
+#DEA Control female vs AD females
 de_results_AD <- run_deseq(preprocessed_AD$counts, preprocessed_AD$metadata, condition_column = "msex")
 
 DEGS_AD <- extract_DEGS(de_results_AD$dds,
@@ -565,7 +560,7 @@ DEGS_AD <- extract_DEGS(de_results_AD$dds,
                         log2FoldChange.v = 0.5,
                         contrast_problem = "0",
                         contrast_control = "1",
-                        label = "AD_male_vs_AD_female",
+                      #  label = "AD_male_vs_AD_female",
                         brain_area = brain_area)
 
 #Save log2fold change full list 
@@ -591,7 +586,7 @@ create_heatmap_vst(dds = de_results_AD$dds, geneNames = DEGS_AD$DEGS$ensembl_gen
 
 plot_MA(DEGS_AD$res, output_MAplot = paste0(brain_area, "_DEG_AD_female_vs_AD_male_MA_plot.jpg"))
 
-# Ejecutar GSEA para los genes diferencialmente expresados
+#Run GSEA for DEGS
 DEGS.g_AD <- setNames(DEGS_AD$res$log2FoldChange, rownames(DEGS_AD$res))
 DEGS.g_AD <- sort(DEGS.g_AD, decreasing = TRUE)
 
@@ -610,7 +605,7 @@ if (!is.null(GSEA_AD$simatrix_BP)) {
   message("No enriched terms found for BP.")
 }
 
-# Verifica si hay términos enriquecidos en MF antes de escribir los resultados
+#Verify if there are enriched terms in MF before write results
 if (!is.null(GSEA_AD$simatrix_MF)) {
   vroom::vroom_write(GSEA_AD$simatrix_MF@result, 
                      file = paste0(brain_area, "_GO_MF_results_control_AD_female_vs_AD_male.txt"))
@@ -620,9 +615,20 @@ if (!is.null(GSEA_AD$simatrix_MF)) {
 
 #Table for IPA
 
-IPA <- DEGS_0$res.df %>% 
-  left_join(DEGS_1$res.df) %>% 
-  left_join(DEGS_AD$res.df)
+#Rename cols in data
+DEGS_0_renamed <- DEGS_0$res.df %>% 
+  rename_with(~ paste0("DEGS_0_", .x), -ensembl_gene_id)
+
+DEGS_1_renamed <- DEGS_1$res.df %>% 
+  rename_with(~ paste0("DEGS_1_", .x), -ensembl_gene_id)
+
+DEGS_AD_renamed <- DEGS_AD$res.df %>% 
+  rename_with(~ paste0("DEGS_AD_", .x), -ensembl_gene_id)
+
+# Luego haces los join como antes
+IPA <- DEGS_0_renamed %>%
+  left_join(DEGS_1_renamed, by = "ensembl_gene_id") %>%
+  left_join(DEGS_AD_renamed, by = "ensembl_gene_id")
 
 #Save table for IPA
 
