@@ -28,11 +28,16 @@ metadata <- args[2]
 brain_area <- args[3]
 brain_area <- as.character(brain_area)
 
+cat("Interpreted args:\n")
+cat("Counts file: ", args[1], "\n")
+cat("Metadata file: ", args[2], "\n")
+cat("Brain area: ", args[3], "\n")
+cat("Batch correction: ", args[4], "\n")
 
-counts <- readRDS("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_rawcounts_TC.rds") %>% as.data.frame()
-metadata <- vroom::vroom("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_metadata_TC.txt")
-brain_area <- "TC_Mayo"
-tissue_batch_correction <- FALSE
+# counts <- readRDS("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds") %>% as.data.frame()
+# metadata <- vroom::vroom("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
+# brain_area <- "TC_Mayo"
+# tissue_batch_correction <- FALSE
 
 # Set seed
 set.seed(10)
@@ -80,7 +85,6 @@ del_dupl <- function(counts) {
   return(counts)
 }
 
-
 #Pre-process data
 
 preprocess_data <- function(counts, metadata) {
@@ -94,22 +98,21 @@ preprocess_data <- function(counts, metadata) {
   rownames(counts) <- NULL
   counts <- counts %>% column_to_rownames(var = "feature")
   
-  # Ensure diagnosis is treated as a factor
-  metadata <- metadata %>% mutate(diagnosis = factor(diagnosis))
+  #Ensure diagnosis is treated as a factor
+  metadata <- metadata %>%
+    filter(diagnosis %in% c("Alzheimer Disease", "control")) %>% 
+    mutate(diagnosis = factor(diagnosis))
   
-  # Filter metadata based on conditions
-  metadata <- metadata %>% filter(exclude == FALSE)
-  
-  
-  # Filtrar metadata antes de aplicar la corrección de lote
-  if ("sequencingBatch" %in% colnames(metadata)) {
-    metadata <- metadata[!is.na(metadata$sequencingBatch), ]
-  }
-  print(dim(metadata))
-  
+  #Filter metadata based on conditions
   if ("exclude" %in% colnames(metadata)) {
     metadata <- metadata[metadata$exclude != TRUE | is.na(metadata$exclude), ]
   }
+  
+  #Filtering metadata before applying batch correction
+  if ("sequencingBatch" %in% colnames(metadata)) {
+    metadata <- metadata[!is.na(metadata$sequencingBatch), ]
+  }
+ 
   print(dim(metadata))
   
   specimenIDs_in_counts <- colnames(counts) 
@@ -119,11 +122,11 @@ preprocess_data <- function(counts, metadata) {
   
   specimenIDs <- metadata$specimenID
   counts <- counts %>% 
-    dplyr::select(c(1, any_of(specimenIDs)))
+    dplyr::select(c(1, all_of(specimenIDs)))
   counts <- counts[rowSums(counts) != 0, ]
   print(dim(counts))
   
-  specimenIDs_in_counts <- colnames(counts)  # Asumiendo que la primera columna no es un specimenID
+  specimenIDs_in_counts <- colnames(counts)
   metadata <- metadata %>% dplyr::filter(specimenID %in% specimenIDs_in_counts)
   print(dim(metadata))
   return(list(counts = counts, metadata = metadata))
@@ -134,59 +137,62 @@ preprocess_data <- function(counts, metadata) {
 process_data <- function(counts, metadata, condition_column, sex_condition, diagnosis_condition) {
   metadata <- metadata %>% filter(!is.na(!!sym(condition_column))) %>% 
     filter(sex %in% sex_condition) %>% 
-    filter(diagnosis %in% diagnosis_condition)
+    filter(diagnosis %in% diagnosis_condition) %>% 
+    filter(!is.na(specimenIdSource)) %>% 
+    droplevels()  #Eliminate empty factor levels
   
-  # Select columns in counts that match specimenID in metadata
+  #Select columns in counts that match specimenID in metadata
   counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
   
   return(list(counts = counts, metadata = metadata))
 }
 
-# 
-# #Pre-process data
-# 
-# preprocess_data <- function(counts, metadata, condition_column, sex, diagnosis_condition) {
-#   counts <- counts[-c(1:4),]  # Remove the first four rows
-#   counts <- counts %>% mutate(feature = str_remove(feature, "\\..*$"))
-#   counts <- del_dupl(counts)
-#   rownames(counts) <- NULL
-#   counts <- counts %>% column_to_rownames(var = "feature")
-#   
-#   # Ensure diagnosis is treated as a factor
-#   metadata <- metadata %>% mutate(diagnosis = factor(diagnosis))
-#   
-#   # Filter metadata based on conditions
-#   metadata <- metadata %>% filter(exclude != TRUE)
-#   metadata <- metadata %>% filter(if_all(c(diagnosis, sex), ~ !is.na(.)))
-#   metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
-#   metadata <- metadata %>% filter(sex %in% sex)
-#   metadata <- metadata %>% filter(diagnosis %in% diagnosis_condition)
-#   
-#   #Counts
-#   
-#   metadata <- metadata[metadata$specimenID %in% colnames(counts), ]
-#   
-#   # Select columns in counts that match specimenID in metadata
-#   counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
-#   
-#   return(list(counts = counts, metadata = metadata))
-# }
-
 #Run deseq
-
-run_deseq <- function(counts, metadata, condition_column) {
-  coldata <- as.data.frame(colnames(counts))
-  colnames(coldata) <- "specimenID"
+run_deseq <- function(counts, metadata, condition_column, design_vars) {
+  #Prepare coldata
+  coldata <- data.frame(specimenID = colnames(counts)) %>%
+    left_join(metadata, by = "specimenID")
+  #Ensure that msex is a factor if present
+  if (!is.factor(coldata$sex)) {
+    coldata$sex <- as.factor(coldata$sex)
+  }
+  #Convert column_condition to factor
+  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
+  coldata <- droplevels(coldata)
+  #Reorder levels if ‘control’ is present
+  if ("control" %in% levels(coldata[[condition_column]])) {
+    coldata[[condition_column]] <- relevel(coldata[[condition_column]], ref = "control")
+  }
+  #
+  if ("specimenIdSource" %in% colnames(coldata) && nlevels(coldata$specimenIdSource) > 2 ) {
+    coldata[["specimenIdSource"]] <- as.factor(coldata[["specimenIdSource"]])
+  }
+  #Verify sufficient levels in condition
+  if (nlevels(coldata[[condition_column]]) < 2) {
+    stop(paste("Variable", condition_column, "has less than two levels."))
+  }
+ 
+  #Scaling RIN and pmi if mean or sd > 5
+  for (var in c("RIN", "pmi")) {
+    val_mean <- mean(coldata[[var]], na.rm = TRUE)
+    val_sd <- sd(coldata[[var]], na.rm = TRUE)
+    if (val_mean >= 5 || val_sd >= 5) {
+      message(paste("Scaling", var, "for having mean or sd > 5"))
+      coldata[[var]] <- scale(coldata[[var]])
+    }
+  }
+  #Build design formula
   
-  coldata <- coldata %>%
-    left_join(metadata, by = "specimenID") %>%
-    dplyr::select("specimenID","individualIdSource","sex", condition_column)
+  if (nlevels(coldata$sex) > 1 && condition_column != "sex") {
+    design_vars <- c(design_vars, "sex")
+  }
+  design_vars <- c(design_vars, condition_column)
+  design_formula <- as.formula(paste("~", paste(design_vars, collapse = " + ")))
   
-  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])  # Convert to factor
-  
+  #Execute DESeq2
   dds <- DESeqDataSetFromMatrix(countData = counts, 
                                 colData = coldata,
-                                design = as.formula(paste("~", condition_column)))
+                                design = design_formula)
   dds <- DESeq(dds)
   
   return(list(dds = dds, 
@@ -217,11 +223,10 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   res.df <- res.df %>% mutate(ensembl_gene_id = rownames(.), .before = 1) 
   res.df <- res.df %>% left_join(symbol, by = "ensembl_gene_id") #merge
   
-  # BaseMean by condition --- ---
   # Extract counts normalized 
   normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
   
-  # Calcula los valores de baseMean por condición
+  #BaseMean per condition
   baseMean_4 <- rowMeans(normcounts[, coldata$diagnosis == contrast_control]) %>% as.data.frame()
   colnames(baseMean_4) <- paste0("baseMean_", contrast_control)
   
@@ -231,84 +236,30 @@ extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.
   baseMean_genes <- cbind(baseMean_4, baseMean_1)
   baseMean_genes <- baseMean_genes %>% rownames_to_column(var = "feature")
   
-  # DEGs are...
+  #DEGs are...
   DEGS <- res.df %>% filter(diffexpressed != "NO")
   dim(DEGS)
   
   baseMean_DEGS <- baseMean_genes %>% filter(feature %in% DEGS$ensembl_gene_id)
   DEGS <-  DEGS %>% left_join(baseMean_DEGS, by = c("ensembl_gene_id" = "feature"))
   
-  # Add delabel column with gene names for DEGs
+  #Add delabel column with gene names for DEGs
   DEGS <- DEGS %>% mutate(delabel = external_gene_name)
   
-  # For non-DEGs, delabel will be NA or empty
+  #For non-DEGs, delabel will be NA or empty
   res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
   
   return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
   
-}
-
-#NEW
-extract_DEGS <- function(dds, condition_column, coldata, padj.v, log2FoldChange.v, 
-                         contrast_problem, contrast_control, label, brain_area){
-  
-  res <- results(dds, contrast = c(condition_column, contrast_problem, contrast_control), #condition, problem, control 
-                 pAdjustMethod = 'BH', alpha = 0.05)
-  res.df <- res %>% as.data.frame() %>% filter(!is.na(padj))
-  
-  # add a column of NAs
-  res.df$diffexpressed <- "NO"
-  # if log2Foldchange > 0.5 and pvalue < 0.05, set as "UP" 
-  res.df$diffexpressed[res.df$log2FoldChange > log2FoldChange.v & res.df$padj < padj.v] <- "UP"
-  # if log2Foldchange < -0.5 and pvalue < 0.05, set as "DOWN"
-  res.df$diffexpressed[res.df$log2FoldChange < -(log2FoldChange.v) & res.df$padj < padj.v] <- "DOWN"
-  
-  # Add gene names in SYMBOL --- ---
-  # Create dictionary
-  symbol <- convert_ens_to_symbol(rownames(res))
-  
-  # Make rownames columns
-  res.df <- res.df %>% mutate(ensembl_gene_id = rownames(.), .before = 1) 
-  res.df <- res.df %>% left_join(symbol, by = "ensembl_gene_id") #merge
-  
-  # BaseMean by condition --- ---
-  # Extract counts normalized 
-  normcounts <- counts(dds, normalized = TRUE) %>% as.data.frame()
-  
-  # Calcula los valores de baseMean por condición
-  baseMean_4 <- rowMeans(normcounts[, coldata$diagnosis == contrast_control]) %>% as.data.frame()
-  colnames(baseMean_4) <- paste0("baseMean_", contrast_control)
-  
-  baseMean_1 <- rowMeans(normcounts[, coldata$diagnosis == contrast_problem]) %>% as.data.frame()
-  colnames(baseMean_1) <- paste0("baseMean_", contrast_problem)
-  
-  baseMean_genes <- cbind(baseMean_4, baseMean_1)
-  baseMean_genes <- baseMean_genes %>% rownames_to_column(var = "feature")
-  
-  # DEGs are...
-  DEGS <- res.df %>% filter(diffexpressed != "NO")
-  dim(DEGS)
-  
-  baseMean_DEGS <- baseMean_genes %>% filter(feature %in% DEGS$ensembl_gene_id)
-  DEGS <-  DEGS %>% left_join(baseMean_DEGS, by = c("ensembl_gene_id" = "feature"))
-  
-  # Add delabel column with gene names for DEGs
-  DEGS <- DEGS %>% mutate(delabel = external_gene_name)
-  
-  # For non-DEGs, delabel will be NA or empty
-  res.df <- res.df %>% mutate(delabel = ifelse(diffexpressed != "NO", external_gene_name, NA))
-  
-  # Return the result
-  return(list(res = res, res.df = res.df, DEGS = DEGS, normcounts = normcounts))
 }
 
 #Visualize results
 
-create_volcano_plot <- function(res.df, condition_compared, brain_region, output_file) {
+create_volcano_plot <- function(res.df, condition_compared, brain_region, output_file, log2fc) {
 
   vplot <- ggplot(data=res.df, aes(x=log2FoldChange, y= -log10(padj),  col = diffexpressed, label = delabel)) +
     geom_point() +
-    geom_vline(xintercept=c(0.5, -0.5), col="red") + 
+    geom_vline(xintercept=c(log2fc, -log2fc), col="red") + 
     geom_hline(yintercept=-log10(0.05), col="red") + 
     scale_color_manual(values=c("#4E8098", "gray", "#A31621")) +
     theme_minimal() +
@@ -361,7 +312,6 @@ create_heatmap_vst <- function(dds, geneNames, output_file) {
            show_colnames = FALSE, 
            filename = output_file)
 } }
-
 
 #Plot MA 
 
@@ -446,21 +396,26 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 # Load data
 data <- load_data()
 
-data<- preprocess_data(counts, metadata = metadata)
+data <- preprocess_data(data$counts, metadata = data$metadata)
 
-####### Controlcounts####### Control male vs AD males ##########
+####### Control male vs AD males ##########
 
 cat("####### Control male vs AD males ##########")
 
-# Pre-proces data, filter by condition and sex
-preprocessed_1 <- process_data(data$counts, data$metadata, 
+#Pre-proces data, filter by condition and sex
+preprocessed_1 <- process_data(counts = data$counts, 
+                               metadata = data$metadata, 
                                   condition_column = "diagnosis", 
-                                  sex = "male", diagnosis_condition = c("Alzheimer Disease", "control"))
+                                  sex = "male", 
+                                  diagnosis_condition = c("Alzheimer Disease", "control"))
 table(preprocessed_1$metadata$sex)
 table(preprocessed_1$metadata$diagnosis)
 
-# DEA control males vs AD males
-de_results_1 <- run_deseq(preprocessed_1$counts, preprocessed_1$metadata, condition_column = "diagnosis")
+#DEA control males vs AD males
+de_results_1 <- run_deseq(preprocessed_1$counts,
+                          preprocessed_1$metadata, 
+                          condition_column = "diagnosis", 
+                          design_vars = c("RIN", "specimenIdSource"))
 
 DEGS_1 <- extract_DEGS(de_results_1$dds, condition_column = "diagnosis", 
                        coldata = de_results_1$coldata, 
@@ -480,6 +435,7 @@ vroom::vroom_write(DEGS_1$DEGS, file = paste0(brain_area, "_DEGS_control_male_vs
 #Save volcano plot
 
 create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD males",
+                    log2fc = 0.5,
                     brain_region = brain_area, 
                     output_file = paste0(brain_area, "_DEG_control_male_vs_AD_male_volcano_plot.jpg"))
 
@@ -531,7 +487,10 @@ table(preprocessed_0$metadata$sex)
 table(preprocessed_0$metadata$diagnosis)
 
 # DEA Control female vs AD females
-de_results_0 <- run_deseq(preprocessed_0$counts, preprocessed_0$metadata, condition_column = "diagnosis")
+de_results_0 <- run_deseq(preprocessed_0$counts, 
+                          preprocessed_0$metadata,
+                          condition_column = "diagnosis", 
+                          design_vars = c("RIN", "specimenIdSource"))
 
 DEGS_0 <- extract_DEGS(de_results_0$dds, 
                        condition_column = "diagnosis", 
@@ -552,6 +511,7 @@ vroom::vroom_write(DEGS_0$DEGS, file = paste0(brain_area, "_DEGS_control_female_
 # Save volcano plot
  
 create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD females", 
+                    log2fc = 0.5,
                     brain_region = brain_area, 
                     output_file = paste0(brain_area, "_DEG_control_female_vs_AD_female_volcano_plot.jpg"))
 
@@ -604,7 +564,10 @@ table(preprocessed_AD$metadata$sex)
 table(preprocessed_AD$metadata$diagnosis)
 
 # DEA Control female vs AD females
-de_results_AD <- run_deseq(preprocessed_AD$counts, preprocessed_AD$metadata, condition_column = "sex")
+de_results_AD <- run_deseq(preprocessed_AD$counts,
+                           preprocessed_AD$metadata,
+                           condition_column = "sex", 
+                           design_vars = c("RIN"))
 
 DEGS_AD <- extract_DEGS(de_results_AD$dds,
                         condition_column = "sex",
@@ -626,6 +589,7 @@ vroom::vroom_write(DEGS_AD$DEGS, file = paste0(brain_area, "_DEGS_AD_female_vs_A
 
 create_volcano_plot(DEGS_AD$res.df, condition_compared = "Control AD males vs AD females",
                     brain_region = brain_area,
+                    log2fc = 0.5, 
                     output_file = paste0(brain_area, "_DEG_AD_female_vs_AD_male_volcano_plot.jpg"))
 
 #Save heatmap

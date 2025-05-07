@@ -8,6 +8,32 @@
 
 time <- Sys.time()
 
+cat("# Args:\n")
+
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 4) {
+  stop("Error: Expected 4 arguments:\n 1. Path to counts file (.rds)\n 
+       2. Path to metadata file (.txt or .csv)\n
+       3. Brain area name\n
+       4. Batch correction (TRUE or FALSE)", 
+       call. = FALSE)
+}
+
+cat("Interpreted args:\n")
+cat("Counts file: ", args[1], "\n")
+cat("Metadata file: ", args[2], "\n")
+cat("Brain area: ", args[3], "\n")
+cat("Batch correction: ", args[4], "\n")
+
+counts <- args[1]
+metadata <- args[2]
+brain_area <- args[3]
+tissue_batch_correction <- args[4] #boolean
+# counts<- readRDS(file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds") %>% as.data.frame()
+# metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/HCN/RNA_seq_metadata_HCN.txt")
+# brain_area <- "HCN_ROSMAP"
+# tissue_batch_correction <- FALSE
+
 cat("# Load libraries\n")
 pacman::p_load("tidyverse", 
                "DESeq2",
@@ -26,29 +52,12 @@ pacman::p_load("tidyverse",
 # Set seed
 set.seed(10)
 
-#Args
-
-args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 4) {
-  stop("Error: Expected 4 arguments:\n 1. Path to counts file (.rds)\n 2. Path to metadata file (.txt or .csv)\n 3. Brain area name\n 4. Batch correction (TRUE or FALSE)", 
-       call. = FALSE)
-}
-
-counts <- args[1]
-metadata <- args[2]
-brain_area <- args[3]
-tissue_batch_correction <- args[4] #boolean
-#counts<- readRDS(file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds") %>% as.data.frame()
-# metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/HCN/RNA_seq_metadata_HCN.txt")
-# brain_area <- "HCN_ROSMAP"
-# tissue_batch_correction <- FALSE
-
-cat("#Define functions \n")
+cat("# Define functions \n")
 
 #Load data
 
 load_data <- function(args) {
-  counts <- readRDS(file = args[1]) #%>% as.data.frame()
+  counts <- readRDS(file = args[1]) %>% as.data.frame()
   metadata <- vroom::vroom(file = args[2])
   brain_area <- as.character(args[3])  #Text in ""
   tissue_batch_correction <- as.logical(args[4])  #Boolean
@@ -147,6 +156,7 @@ process_data <- function(counts, metadata, condition_column, sex, ceradsc_condit
   metadata <- metadata %>% filter(!is.na(!!sym(condition_column)))
   metadata <- metadata %>% filter(msex %in% sex)
   metadata <- metadata %>% filter(ceradsc %in% ceradsc_condition)
+  metadata <- metadata %>% filter(!is.na(pmi))
   
   # Select columns in counts that match specimenID in metadata
   counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
@@ -156,44 +166,53 @@ process_data <- function(counts, metadata, condition_column, sex, ceradsc_condit
 
 #Run deseq
 
-run_deseq <- function(counts, metadata, condition_column, control_by_sex) {
-  coldata <- as.data.frame(colnames(counts))
-  colnames(coldata) <- "specimenID"
-  
-  coldata <- coldata %>%
-    left_join(metadata, by = "specimenID") %>%
-    dplyr::select("specimenID", "sequencingBatch","msex", "ceradsc", "tissue", "RIN")
-  
-  #Convert the condition column to a factor, in case it's not
-  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
-  
-  #Remove empty levels from factors in coldata
-  coldata <- droplevels(coldata)
-  
-  coldata$sequencingBatch <- as.factor(coldata$sequencingBatch)
-  coldata$tissue <- as.factor(coldata$tissue)
-  coldata$ceradsc <- as.factor(coldata$ceradsc)
-  
-  #Check if “tissue” has more than one level
-  if (length(unique(coldata$tissue)) > 1) {
-    design_formula <- as.formula(paste("~ sequencingBatch + tissue + RIN + msex +", condition_column))
-  } else {
-    design_formula <- as.formula(paste("~ sequencingBatch + RIN + msex +", condition_column))
+run_deseq <- function(counts, metadata, condition_column, design_vars) {
+  #Prepare coldata
+  coldata <- data.frame(specimenID = colnames(counts)) %>%
+    left_join(metadata, by = "specimenID")
+  #Ensure that msex is a factor if present
+  if (!is.factor(coldata$msex)) {
+    coldata$msex <- as.factor(coldata$msex)
   }
+  #Convert column_condition to factor
+  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
+  coldata <- droplevels(coldata)
+  #Reorder levels if ‘control’ is present
+  if ("control" %in% levels(coldata[[condition_column]])) {
+    coldata[[condition_column]] <- relevel(coldata[[condition_column]], ref = "control")
+  }
+  #Verify sufficient levels in condition
+  if (nlevels(coldata[[condition_column]]) < 2) {
+    stop(paste("Variable", condition_column, "has less than two levels."))
+  }
+  #Scaling RIN and pmi if mean or sd > 5
+  for (var in c("RIN", "pmi")) {
+    val_mean <- mean(coldata[[var]], na.rm = TRUE)
+    val_sd <- sd(coldata[[var]], na.rm = TRUE)
+    if (val_mean >= 5 || val_sd >= 5) {
+      message(paste("Scaling", var, "for having mean or sd > 5"))
+      coldata[[var]] <- scale(coldata[[var]])
+    }
+  }
+  #Build design formula
+  design_terms <- design_vars
+  if (nlevels(coldata$msex) > 1) {
+    design_terms <- c(design_terms, "msex")
+  }
+  design_terms <- c(design_terms, condition_column)
+  design_formula <- as.formula(paste("~", paste(design_terms, collapse = " + ")))
   
-  #control_by_sex
-  
-  design_formula <- as.formula(paste("~ sequencingBatch +", condition_column))
-  
-  dds <- DESeqDataSetFromMatrix(countData = counts,
+  #Run DESeq2
+  dds <- DESeqDataSetFromMatrix(countData = counts, 
                                 colData = coldata,
                                 design = design_formula)
   dds <- DESeq(dds)
   
   return(list(dds = dds, 
-              coldata = coldata, 
+              coldata = coldata,
               design_formula = design_formula))
 }
+
 
 #Extract DEGS
 
@@ -279,7 +298,7 @@ create_volcano_plot <- function(res.df, condition_compared, brain_region, output
 create_heatmap_vst <- function(dds, geneNames, output_file) {
   #Verify if there are enough DEGS to plot the heatmap
   if (length(geneNames) < 2) {
-    message("There are not enough DEGs to generate a heatmap. The process will not run.")
+    message("There are not enough DEGs to generate a heatmap. The process will not run.\n")
     return(NULL)
   } else{
     
@@ -313,13 +332,10 @@ create_heatmap_vst <- function(dds, geneNames, output_file) {
 #Plot MA 
 
 plot_MA <- function(res, output_MAplot){
-  # Abrir dispositivo gráfico según la extensión del archivo
   jpeg(output_MAplot, width = 11, height = 15, units = "in", res = 300)
   
-  # Generar el MA plot
+  #MA plot
   plotMA(res, ylim=c(-2,2))
-  
-  # Cerrar el dispositivo gráfico
   dev.off()
 }
 
@@ -391,12 +407,12 @@ run_gsea <- function(DEGS.g, name_BP_dotplot, name_MF_dotplot, name_simmatrix_BP
 ###### MAIN #####
 
 cat("# Load data \n")
-data <- load_data()
-preprocessed_data <- preprocess_data(counts, metadata = metadata)
+data <- load_data(args)
+preprocessed_data <- preprocess_data(data$counts, metadata = data$metadata)
 
 ####### Control male vs AD males ##########
 
-cat("####### Control male vs AD males ##########")
+cat("####### Control male vs AD males ##########\n")
 
 #Pre-proces data, filter by condition and sex
 preprocessed_1 <- process_data(preprocessed_data$counts, preprocessed_data$metadata, 
@@ -405,44 +421,47 @@ preprocessed_1 <- process_data(preprocessed_data$counts, preprocessed_data$metad
                                   ceradsc_condition = c("1", "4")) #from both conditions to compare
 
 #DEA control males vs AD males
-de_results_1 <- run_deseq(preprocessed_1$counts, preprocessed_1$metadata, condition_column = "ceradsc")
+de_results_1 <- run_deseq(preprocessed_1$counts,
+                          preprocessed_1$metadata,
+                          condition_column = "ceradsc",
+                          design_vars = c("RIN", "pmi"))
 
 #Results males
 DEGS_1 <-extract_DEGS(de_results_1$dds, 
              condition_column = "ceradsc", 
              coldata = de_results_1$coldata, 
              padj.v = 0.05,
-             log2FoldChange.v = 1, 
+             log2FoldChange.v = 0.5, 
              contrast_problem = "1",
              contrast_control = "4",
           #   label = "c_male_vs_AD_male",
              brain_area = brain_area)
 
-#Save log2fold change full list 
+cat("#Save log2fold change full list\n")
 
 vroom::vroom_write(DEGS_1$res.df, file = paste0(brain_area,"_DE_full_gene_list_control_male_vs_AD_male.txt"))
 
-#Save DEGs list 
+cat("#Save DEGs list\n")
 
 vroom::vroom_write(DEGS_1$DEGS, file = paste0(brain_area, "_DEGS_control_male_vs_AD_male.txt"))
 
-#Save volcano plot
+cat("#Save volcano plot\n")
 
 create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD males",
-                    log2fc = 1,
+                    log2fc = 0.5,
                     brain_region = brain_area, 
                     output_file = paste0(brain_area, "_DEG_control_male_vs_AD_male_volcano_plot.jpg"))
 
-#Save heatmap
+cat("#Save heatmap")
 
 create_heatmap_vst(dds = de_results_1$dds, geneNames = DEGS_1$DEGS$ensembl_gene_id, 
                    output_file = paste0(brain_area, "_DEG_control_male_vs_AD_male_heatmap.jpg"))
 
-#Save MA plot
+cat("#Save MA plot \n")
 
 plot_MA(DEGS_1$res, output_MAplot = paste0(brain_area, "_DEG_control_male_vs_AD_male_MA_plot.jpg"))
 
-#Run GSEA for male DEGS
+cat("#Run GSEA for male DEGS \n")
 DEGS.g_1 <- setNames(DEGS_1$res$log2FoldChange, rownames(DEGS_1$res))
 DEGS.g_1 <- sort(DEGS.g_1, decreasing = TRUE)
 
@@ -452,7 +471,7 @@ GSEA_1 <- run_gsea(DEGS.g_1,
          name_simmatrix_BP = paste0(brain_area, "_GSEA_control_male_vs_AD_male_BP_emmapplot.jpg"),
          name_simmatrix_MF = paste0(brain_area, "_GSEA_control_male_vs_AD_male_MF_emmapplot.jpg"))
 
-cat("#Save enrichments")
+cat("# Save enrichments \n")
 
 if (!is.null(GSEA_1$simatrix_BP)) {
   vroom::vroom_write(GSEA_1$simatrix_BP@result, 
@@ -461,7 +480,7 @@ if (!is.null(GSEA_1$simatrix_BP)) {
   message("No enriched terms found for BP.")
 }
 
-# Check for enriched terms in MF before writing the results
+#Check for enriched terms in MF before writing the results
 if (!is.null(GSEA_1$simatrix_MF)) {
   vroom::vroom_write(GSEA_1$simatrix_MF@result, 
                      file = paste0(brain_area, "_GO_MF_results_control_male_vs_AD_male.txt"))
@@ -470,7 +489,7 @@ if (!is.null(GSEA_1$simatrix_MF)) {
 }
 
 ########## Control female vs AD females  ##########
-cat("########## Control female vs AD females  ##########")
+cat("########## Control female vs AD females  ##########\n")
 
 #Processing data
 
@@ -479,7 +498,10 @@ preprocessed_0 <- process_data(preprocessed_data$counts, preprocessed_data$metad
                                   sex = "0", ceradsc_condition = c("1", "4"))
 
 # DEA Control female vs AD females
-de_results_0 <- run_deseq(preprocessed_0$counts, preprocessed_0$metadata, condition_column = "ceradsc")
+de_results_0 <- run_deseq(preprocessed_0$counts,
+                          preprocessed_0$metadata, 
+                          condition_column = "ceradsc", 
+                          design_vars = c("RIN", "pmi"))
 
 DEGS_0 <- extract_DEGS(de_results_0$dds, 
              condition_column = "ceradsc", 
@@ -502,6 +524,7 @@ vroom::vroom_write(DEGS_0$DEGS, file = paste0(brain_area, "_DEGS_control_female_
 # Save volcano plot
  
 create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD females", 
+                    log2fc = 0.5,
                     brain_region = brain_area, 
                     output_file = paste0(brain_area, "_DEG_control_female_vs_AD_female_volcano_plot.jpg"))
 
@@ -551,7 +574,10 @@ preprocessed_AD <- process_data(preprocessed_data$counts, preprocessed_data$meta
                                    sex = c("0", "1"), ceradsc_condition = "1")
 
 #DEA Control female vs AD females
-de_results_AD <- run_deseq(preprocessed_AD$counts, preprocessed_AD$metadata, condition_column = "msex")
+de_results_AD <- run_deseq(preprocessed_AD$counts, 
+                           preprocessed_AD$metadata,
+                           condition_column = "msex", 
+                           design_vars = c("RIN", "pmi"))
 
 DEGS_AD <- extract_DEGS(de_results_AD$dds,
                         condition_column = "msex",
@@ -574,6 +600,7 @@ vroom::vroom_write(DEGS_AD$DEGS, file = paste0(brain_area, "_DEGS_AD_female_vs_A
 # Save volcano plot
 
 create_volcano_plot(DEGS_AD$res.df, condition_compared = "Control AD males vs AD females",
+                    log2fc = 0.5,
                     brain_region = brain_area,
                     output_file = paste0(brain_area, "_DEG_AD_female_vs_AD_male_volcano_plot.jpg"))
 
@@ -613,7 +640,7 @@ if (!is.null(GSEA_AD$simatrix_MF)) {
   message("No enriched terms found for MF.")
 }
 
-#Table for IPA
+cat("#Table for IPA")
 
 #Rename cols in data
 DEGS_0_renamed <- DEGS_0$res.df %>% 
@@ -625,7 +652,7 @@ DEGS_1_renamed <- DEGS_1$res.df %>%
 DEGS_AD_renamed <- DEGS_AD$res.df %>% 
   rename_with(~ paste0("DEGS_AD_", .x), -ensembl_gene_id)
 
-# Luego haces los join como antes
+#Join
 IPA <- DEGS_0_renamed %>%
   left_join(DEGS_1_renamed, by = "ensembl_gene_id") %>%
   left_join(DEGS_AD_renamed, by = "ensembl_gene_id")
@@ -636,4 +663,4 @@ vroom::vroom_write(IPA,
                   file = paste0(brain_area, "_IPA_table.txt") )
 
 cat("END ----")
-cat("Elapsed time:", Sys.time() - time, "hours")
+cat("Elapsed time:", Sys.time() - time, "mins")
