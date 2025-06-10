@@ -34,10 +34,10 @@ cat("Metadata file: ", args[2], "\n")
 cat("Brain area: ", args[3], "\n")
 cat("Batch correction: ", args[4], "\n")
 
-# counts <- readRDS("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds") %>% as.data.frame()
-# metadata <- vroom::vroom("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
-# brain_area <- "TC_Mayo"
-# tissue_batch_correction <- FALSE
+counts <- readRDS("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds") %>% as.data.frame()
+metadata <- vroom::vroom("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
+brain_area <- "TC_Mayo"
+tissue_batch_correction <- FALSE
 
 # Set seed
 set.seed(10)
@@ -271,41 +271,33 @@ create_volcano_plot <- function(res.df, condition_compared, brain_region, output
 }
 
 #Create heatmap
-create_heatmap_vst <- function(dds, geneNames, output_file) {
-  # Verificar si hay suficientes DEGs para generar el heatmap
+create_heatmap_vst <- function(dds, geneNames, output_file, contrast) {
+  #Check if there are enough SDRs to generate the heatmap
   if (length(geneNames) < 2) {
     message("There are not enough DEGs to generate a heatmap. The process will not run.")
     return(NULL)
   } else{
-  
-  # Aplicar la transformación de variancia estabilizada (vst)
+  #Applying the variance stabilised transformation (vst)
   vst_data <- vst(dds, blind = FALSE)
-  
-  # Normalizar las cuentas regularizadas por filas
+  #Normalise the accounts regularised by rows
   Z <- t(scale(t(assay(vst_data))))
-  
-  # Filtrar la matriz Z solo para los genes que están en geneNames
+  #Filter the Z-array only for genes that are in geneNames
   Z_filtered <- Z[rownames(Z) %in% geneNames, ]
-  
-  # Asegurarse de que los nombres de los genes coinciden
+  #Make sure that the gene names match
   geneNames_filtered <- geneNames[geneNames %in% rownames(Z_filtered)]
-  
-  # Convertir la matriz a formato apropiado para heatmap
-  mat_gn <- Z_filtered[geneNames_filtered, , drop = FALSE]  # Filtrar solo los genes de interés
-  rownames(mat_gn) <- geneNames_filtered  # Usar los nombres de los genes para las filas
-  
-  # Extraer las anotaciones de las columnas
-  my_sample_col <- as.data.frame(colData(dds))
-  #my_sample_col <- my_sample_col[, c("diagnosis", "sex")]
-  
-  # Crear y guardar el heatmap directamente con pheatmap
+  #Convert matrix to heatmap-appropriate format
+  mat_gn <- Z_filtered[geneNames_filtered, , drop = FALSE]   #Filter out only genes of interest
+  rownames(mat_gn) <- geneNames_filtered #Use gene names for the rows
+  #Extract annotations from columns
+  #my_sample_col <- as.data.frame(colData(dds))
+  #Create and save the heatmap directly with pheatmap
   pheatmap(mat_gn, 
-           main = paste0(brain_area, " DEGs heatmap"), 
+           main = paste0(brain_area, " ", contrast," DEGs"), 
            name = "Row Z-Score", 
            color = colorRampPalette(c("navy", "white", "firebrick3"))(50), 
            clustering_distance_rows = "euclidean", 
            clustering_method = "ward.D2", 
-         #  annotation_col = my_sample_col,
+           #annotation_col = my_sample_col,
            fontsize = 10, 
            angle_col = 45,  
            show_rownames = TRUE,
@@ -441,14 +433,15 @@ create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD mal
 
 #Save heatmap
 
-create_heatmap_vst(dds = de_results_1$dds, geneNames = DEGS_1$DEGS$ensembl_gene_id, 
+create_heatmap_vst(dds = de_results_1$dds, geneNames = DEGS_1$DEGS$external_gene_name, 
+                   contrast = "Control_male_vs_AD_male", 
                    output_file = paste0(brain_area, "_DEG_control_male_vs_AD_male_heatmap.jpg"))
 
 #Save MA plot
 
 plot_MA(DEGS_1$res, output_MAplot = paste0(brain_area, "_DEG_control_male_vs_AD_male_MA_plot.jpg"))
 
-# Run GSEA for DEGS
+#Run GSEA for DEGS
 DEGS.g_1 <- setNames(DEGS_1$res$log2FoldChange, rownames(DEGS_1$res))
 DEGS.g_1 <- sort(DEGS.g_1, decreasing = TRUE)
 
@@ -508,7 +501,7 @@ vroom::vroom_write(DEGS_0$res.df, file = paste0(brain_area, "_DE_full_gene_list_
 
 vroom::vroom_write(DEGS_0$DEGS, file = paste0(brain_area, "_DEGS_control_female_vs_AD_female.txt"))
 
-# Save volcano plot
+#Save volcano plot
  
 create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD females", 
                     log2fc = 0.5,
@@ -517,14 +510,15 @@ create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD f
 
 #Save heatmap
 
-create_heatmap_vst(dds = de_results_0$dds, geneNames = DEGS_0$DEGS$ensembl_gene_id, 
+create_heatmap_vst(dds = de_results_0$dds, geneNames = DEGS_0$DEGS$external_gene_name, 
+                   contrast = "Control_female_vs_AD_female",
                    output_file = paste0(brain_area, "_DEG_control_female_vs_AD_female_heatmap.jpg"))
 
 #Save MA plot
 
 plot_MA(DEGS_0$res, output_MAplot = paste0(brain_area, "_DEG_control_female_vs_AD_female_MA_plot.jpg"))
 
-# Ejecutar GSEA para los genes diferencialmente expresados
+#Running GSEA for differentially expressed genes
 DEGS.g_0 <- setNames(DEGS_0$res$log2FoldChange, rownames(DEGS_0$res))
 DEGS.g_0 <- sort(DEGS.g_0, decreasing = TRUE)
 
@@ -555,7 +549,7 @@ if (!is.null(GSEA_0$simatrix_MF)) {
 
 cat("########## AD females vs AD males  #######\n")
 
-# Data pre-process
+#Data pre-process
 preprocessed_AD <- process_data(data$counts, data$metadata,
                                    condition_column = "sex", 
                                    sex = c("female", "male"), 
@@ -563,7 +557,7 @@ preprocessed_AD <- process_data(data$counts, data$metadata,
 table(preprocessed_AD$metadata$sex)
 table(preprocessed_AD$metadata$diagnosis)
 
-# DEA Control female vs AD females
+#DEA Control female vs AD females
 de_results_AD <- run_deseq(preprocessed_AD$counts,
                            preprocessed_AD$metadata,
                            condition_column = "sex", 
@@ -585,7 +579,7 @@ vroom::vroom_write(DEGS_AD$res.df, file = paste0(brain_area, "_DE_full_gene_list
 
 vroom::vroom_write(DEGS_AD$DEGS, file = paste0(brain_area, "_DEGS_AD_female_vs_AD_male.txt"))
 
-# Save volcano plot
+#Save volcano plot
 
 create_volcano_plot(DEGS_AD$res.df, condition_compared = "Control AD males vs AD females",
                     brain_region = brain_area,
@@ -594,14 +588,15 @@ create_volcano_plot(DEGS_AD$res.df, condition_compared = "Control AD males vs AD
 
 #Save heatmap
 
-create_heatmap_vst(dds = de_results_AD$dds, geneNames = DEGS_AD$DEGS$ensembl_gene_id, 
+create_heatmap_vst(dds = de_results_AD$dds, geneNames = DEGS_AD$DEGS$external_gene_name, 
+                   contrast = "AD_female_vs_AD_male", 
                    output_file = paste0(brain_area, "_DEG_AD_female_vs_AD_male_heatmap.jpg"))
 
 #Save MA plot
 
 plot_MA(DEGS_0$res, output_MAplot = paste0(brain_area, "_DEG_AD_female_vs_AD_male_MA_plot.jpg"))
 
-# Ejecutar GSEA para los genes diferencialmente expresados
+#Running GSEA for AD-AD differentially expressed genes
 DEGS.g_AD <- setNames(DEGS_AD$res$log2FoldChange, rownames(DEGS_AD$res))
 DEGS.g_AD <- sort(DEGS.g_AD, decreasing = TRUE)
 
@@ -620,7 +615,7 @@ if (!is.null(GSEA_AD$simatrix_BP)) {
   message("No enriched terms found for BP.")
 }
 
-# Verifica si hay términos enriquecidos en MF antes de escribir los resultados
+#Check for rich terms in MF before writing results
 if (!is.null(GSEA_AD$simatrix_MF)) {
   vroom::vroom_write(GSEA_AD$simatrix_MF@result, 
                      file = paste0(brain_area, "_GO_MF_results_control_AD_female_vs_AD_male.txt"))
@@ -630,13 +625,13 @@ if (!is.null(GSEA_AD$simatrix_MF)) {
 
 #Table for IPA
 
-# Crear una función para renombrar las columnas excepto "ensembl_gene_id"
+#Function to rename the columns except ‘ensembl_gene_id’.
 rename_columns <- function(df, suffix) {
   colnames(df)[-1] <- paste0(colnames(df)[-1], "_", suffix)
   return(df)
 }
 
-# Renombrar las columnas para cada tabla
+#Rename the columns for each table
 IPA_0 <- rename_columns(DEGS_0$res.df, paste0(brain_area, "_0"))
 IPA_1 <- rename_columns(DEGS_1$res.df,  paste0(brain_area, "_1"))
 IPA_AD <- rename_columns(DEGS_AD$res.df,  paste0(brain_area, "_AD"))
@@ -656,6 +651,6 @@ dim(IPA)
 vroom::vroom_write(IPA,
                    file = paste0(brain_area, "_IPA_table.txt") )
 
-cat("Elapsed time:", Sys.time() - time, "seconds")
+cat("Elapsed time:", Sys.time() - time, "minutes")
 
 cat("END ----")

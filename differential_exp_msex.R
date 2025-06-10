@@ -158,7 +158,7 @@ process_data <- function(counts, metadata, condition_column, sex, ceradsc_condit
   metadata <- metadata %>% filter(ceradsc %in% ceradsc_condition)
   metadata <- metadata %>% filter(!is.na(pmi))
   
-  # Select columns in counts that match specimenID in metadata
+  #Select columns in counts that match specimenID in metadata
   counts <- counts %>% dplyr::select(all_of(metadata$specimenID))
   
   return(list(counts = counts, metadata = metadata))
@@ -195,13 +195,14 @@ run_deseq <- function(counts, metadata, condition_column, design_vars) {
     }
   }
   #Build design formula
-  design_terms <- design_vars
-  if (nlevels(coldata$msex) > 1) {
-    design_terms <- c(design_terms, "msex")
-  }
-  design_terms <- c(design_terms, condition_column)
-  design_formula <- as.formula(paste("~", paste(design_terms, collapse = " + ")))
   
+  design_formula <- NULL
+  if (nlevels(coldata$msex) == 1) {
+    design_formula <- "~ RIN + pmi + ceradsc"
+  } else {
+    design_formula <- "~ RIN + pmi + msex"
+  }
+  design_formula <- as.formula(design_formula)
   #Run DESeq2
   dds <- DESeqDataSetFromMatrix(countData = counts, 
                                 colData = coldata,
@@ -295,7 +296,7 @@ create_volcano_plot <- function(res.df, condition_compared, brain_region, output
 }
 
 #Create heatmap
-create_heatmap_vst <- function(dds, geneNames, output_file) {
+create_heatmap_vst <- function(dds, geneNames, output_file, contrast) {
   #Verify if there are enough DEGS to plot the heatmap
   if (length(geneNames) < 2) {
     message("There are not enough DEGs to generate a heatmap. The process will not run.\n")
@@ -317,16 +318,17 @@ create_heatmap_vst <- function(dds, geneNames, output_file) {
     my_sample_col <- my_sample_col[, c("ceradsc", "msex")]
     #Create and save the heatmap directly with pheatmap
     pheatmap(mat_gn, 
+             main = paste0(brain_area, " ", contrast," DEGs"), 
              name = "Row Z-Score", 
              color = colorRampPalette(c("navy", "white", "firebrick3"))(50), 
              clustering_distance_rows = "euclidean", 
              clustering_method = "ward.D2", 
              annotation_col = my_sample_col,
              fontsize = 10, 
-             angle_col = 45,  # Ángulo de las etiquetas de columna
+             angle_col = 45, 
              show_rownames = TRUE,
              show_colnames = FALSE, 
-             filename = output_file)  # Guardar directamente el heatmap en el archivo
+             filename = output_file)  
   } }
 
 #Plot MA 
@@ -454,7 +456,8 @@ create_volcano_plot(DEGS_1$res.df, condition_compared = "Control males vs AD mal
 
 cat("#Save heatmap")
 
-create_heatmap_vst(dds = de_results_1$dds, geneNames = DEGS_1$DEGS$ensembl_gene_id, 
+create_heatmap_vst(dds = de_results_1$dds, geneNames = DEGS_1$DEGS$external_gene_name, 
+                   contrast = "Control male vs AD male" ,
                    output_file = paste0(brain_area, "_DEG_control_male_vs_AD_male_heatmap.jpg"))
 
 cat("#Save MA plot \n")
@@ -521,7 +524,7 @@ vroom::vroom_write(DEGS_0$res.df, file = paste0(brain_area, "_DE_full_gene_list_
 
 vroom::vroom_write(DEGS_0$DEGS, file = paste0(brain_area, "_DEGS_control_female_vs_AD_female.txt"))
 
-# Save volcano plot
+#Save volcano plot
  
 create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD females", 
                     log2fc = 0.5,
@@ -530,14 +533,15 @@ create_volcano_plot(DEGS_0$res.df, condition_compared = "Control females vs AD f
 
 #Save heatmap
 
-create_heatmap_vst(dds = de_results_0$dds, geneNames = DEGS_0$DEGS$ensembl_gene_id, 
+create_heatmap_vst(dds = de_results_0$dds, geneNames = DEGS_0$DEGS$external_gene_name, 
+                   contrast = "Control female vs AD female",
                    output_file = paste0(brain_area, "_DEG_control_female_vs_AD_female_heatmap.jpg"))
 
 #Save MA plot
 
 plot_MA(DEGS_0$res, output_MAplot = paste0(brain_area, "_DEG_control_female_vs_AD_female_MA_plot.jpg"))
 
-# Ejecutar GSEA para los genes diferencialmente expresados
+#Running GSEA for differentially expressed genes
 DEGS.g_0 <- setNames(DEGS_0$res$log2FoldChange, rownames(DEGS_0$res))
 DEGS.g_0 <- sort(DEGS.g_0, decreasing = TRUE)
 
@@ -556,7 +560,7 @@ if (!is.null(GSEA_0$simatrix_BP)) {
   message("No enriched terms found for BP.")
 }
 
-# Verifica si hay términos enriquecidos en MF antes de escribir los resultados
+#Check for rich terms in MF before writing results
 if (!is.null(GSEA_0$simatrix_MF)) {
   vroom::vroom_write(GSEA_0$simatrix_MF@result, 
                      file = paste0(brain_area, "_GO_MF_results_control_female_vs_AD_female.txt"))
@@ -571,13 +575,14 @@ cat("########## AD females vs AD males  #######\n")
 #Data process
 preprocessed_AD <- process_data(preprocessed_data$counts, preprocessed_data$metadata,
                                    condition_column = "msex", 
-                                   sex = c("0", "1"), ceradsc_condition = "1")
+                                   sex = c("0", "1"),
+                                   ceradsc_condition = "1")
 
 #DEA Control female vs AD females
 de_results_AD <- run_deseq(preprocessed_AD$counts, 
                            preprocessed_AD$metadata,
                            condition_column = "msex", 
-                           design_vars = c("RIN", "pmi"))
+                           design_vars = c("RIN", "pmi", "msex"))
 
 DEGS_AD <- extract_DEGS(de_results_AD$dds,
                         condition_column = "msex",
@@ -599,14 +604,15 @@ vroom::vroom_write(DEGS_AD$DEGS, file = paste0(brain_area, "_DEGS_AD_female_vs_A
 
 # Save volcano plot
 
-create_volcano_plot(DEGS_AD$res.df, condition_compared = "Control AD males vs AD females",
+create_volcano_plot(DEGS_AD$res.df, condition_compared = "AD males vs AD females",
                     log2fc = 0.5,
                     brain_region = brain_area,
                     output_file = paste0(brain_area, "_DEG_AD_female_vs_AD_male_volcano_plot.jpg"))
 
 #Save heatmap
 
-create_heatmap_vst(dds = de_results_AD$dds, geneNames = DEGS_AD$DEGS$ensembl_gene_id, 
+create_heatmap_vst(dds = de_results_AD$dds, geneNames = DEGS_AD$DEGS$external_gene_name, 
+                   contrast = "AD female vs AD male", 
                    output_file = paste0(brain_area, "_DEG_AD_female_vs_AD_male_heatmap.jpg"))
 
 #Save MA plot
