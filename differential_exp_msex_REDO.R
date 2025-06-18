@@ -448,7 +448,7 @@ male_counts <- preprocessed_data$counts[, male_metadata$specimenID]
 de_results_1 <- run_deseq(male_counts,
                           male_metadata,
                           condition_column = "ceradsc",
-                          design_vars = "~ sequencingBatch + pmi + ceradsc")
+                          design_vars = "~ sequencingBatch + pmi + RIN + ceradsc")
 
 #Results males
 DEGS_1 <-extract_DEGS(de_results_1$dds, 
@@ -533,7 +533,7 @@ female_counts <- preprocessed_data$counts[, female_metadata$specimenID]
 de_results_0 <- run_deseq(female_counts,
                           female_metadata, 
                           condition_column = "ceradsc", 
-                          design_vars = "~ sequencingBatch + pmi + ceradsc")
+                          design_vars = "~ sequencingBatch  + RIN + pmi + ceradsc")
 
 DEGS_0 <- extract_DEGS(de_results_0$dds, 
                        condition_column = "ceradsc", 
@@ -610,7 +610,7 @@ cat("########## AD females vs AD males  #######\n")
 de_results_AD <- run_deseq(preprocessed_data$counts, 
                            preprocessed_data$metadata,
                            condition_column = "msex", 
-                           design_vars = "~ sequencingBatch + pmi + msex + ceradsc + msex:ceradsc") #I'm expecting interaction between sex and condition
+                           design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc") #I'm expecting interaction between sex and condition
 
 DEGS_AD <- extract_DEGS(de_results_AD$dds, 
                         condition_column = "msex",

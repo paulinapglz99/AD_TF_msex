@@ -168,26 +168,15 @@ ggsave("XIST_UTY_rosmap.jpeg",
 
 #Transcript composition 
 
-#Connecting to the Ensembl database through biomaRt
-mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
-
-myannot <- getBM(attributes = c("ensembl_gene_id", 
-                                "percentage_gene_gc_content", "gene_biotype",
-                                "start_position","end_position","hgnc_symbol"),
-                 filters = "ensembl_gene_id", 
-                 values =  unique(counts_ROSMAP$feature),  #annotate the genes in the count matrix 
-                 mart = mart)
-
 library(org.Hs.eg.db)
 annot_rosmap <- AnnotationDbi::select(org.Hs.eg.db,
                                keys = unique(counts_ROSMAP$feature),
                                keytype = "ENSEMBL",
                                columns = c("ENSEMBL", "SYMBOL", "GENENAME", "GENETYPE"))
 
-annot_rosmap <- as.data.frame(annot_rosmap) %>%
-  dplyr::filter(!is.na(GENETYPE)) %>%
-  mutate(individual = ifelse(is.na(SYMBOL), ENSEMBL, SYMBOL)) %>%
-  dplyr::select(individual, group = GENETYPE)
+annot_rosmap_n <- as.data.frame(table(annot_rosmap$GENETYPE, useNA = "ifany"))
+
+annot_rosmap_n <- annot_rosmap_n %>% rename(group = Var1, value = Freq)
 
 ##################################### Mayo Clinic ##################################### 
 
@@ -251,7 +240,7 @@ ggsave("grid_metadata_mayo.jpeg",
 #RIN vs PMI
 RINvsPMI_mayo.p <- ggplot(metadata_Mayo, aes(x = RIN, y = pmi)) +
   geom_point(alpha = 0.7, color = "steelblue", size = 2) +
-  geom_smooth(method = "lm", color = "red", se = TRUE) +
+  geom_smooth(method = "lm", color = "red", se = F) +
   ggtitle(label = "RIN vs PMI - Mayo") +
   xlab("RIN") +
   ylab("PMI") +
@@ -299,7 +288,7 @@ XIST_UTY_mayo.p  <-ggplot(XIST_UTY_mayo, aes(x = log(UTY), y = log(XIST), color 
   geom_point(alpha = 0.8) +
   theme_minimal() +
   scale_color_manual(values = c("female" = "#4B0082", "male" = "#FFA500")) + 
-  labs(title = "Expression of XIST and UTY - ROSMAP",
+  labs(title = "Expression of XIST and UTY - Mayo",
        x = "XIST",
        y = "UTY")
 
