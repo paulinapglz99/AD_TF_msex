@@ -19,7 +19,7 @@ pacman::p_load("dplyr",
 #Filter and summarize data by brain region
 
 summarize_by_tissue <- function(metadata, tissue_name) {
-  tissue_data <- metadata %>% filter(tissue == tissue_name)
+  tissue_data <- metadata %>% dplyr::filter(tissue == tissue_name)
   cat(paste0("Metadata dim ", tissue_name, ": "), dim(tissue_data), "\n")
   cat("NIA-Reagan diagnosis table:\n")
   print(table(tissue_data$ceradsc, useNA = "ifany"))
@@ -30,7 +30,7 @@ summarize_by_tissue <- function(metadata, tissue_name) {
 
 #Read metadata --- ---
 
-metadata_ROSMAP <- vroom::vroom(file = '/datos/rosmap/data_by_counts/metadata/RNAseq_Harmonization_ROSMAP_combined_metadata.csv')
+metadata_ROSMAP <- vroom::vroom(file = '/STORAGE/genut/alzheimer/data_by_counts/metadata/RNAseq_Harmonization_ROSMAP_combined_metadata.csv')
 dim(metadata_ROSMAP)
 #[1] 3400   38
 
@@ -40,7 +40,7 @@ dim(metadata_ROSMAP)
 #and https://www.radc.rush.edu/docs/var/detail.htm?category=Pathology&subcategory=Alzheimer%27s+disease&variable=adnc
 
 metadata_ROSMAP <- metadata_ROSMAP %>%
-  filter(assay == "rnaSeq") %>%  
+  dplyr::filter(assay == "rnaSeq") %>%  
   mutate(NIA_reagan_ADLikelihood = case_when(         
        (ceradsc == 1 & (braaksc == 5 | braaksc ==  6)) ~ "3", #High likelihood
     (ceradsc == 2 & (braaksc == 3 | braaksc == 4)) ~ "2", #Intermediate likelihood

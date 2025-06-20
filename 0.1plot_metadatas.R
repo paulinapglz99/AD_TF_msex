@@ -36,6 +36,7 @@ colnames(metadata_ROSMAP)
 table(metadata_ROSMAP$tissue)
 table(metadata_ROSMAP$exclude)
 
+
 metadata_ROSMAP <- metadata_ROSMAP %>% 
   filter(exclude != TRUE | is.na(exclude)) %>% 
   filter(assay == "rnaSeq") %>% 
@@ -43,6 +44,21 @@ metadata_ROSMAP <- metadata_ROSMAP %>%
   filter(ceradsc %in% c("1", "4"))
 dim(metadata_ROSMAP)
 metadata_ROSMAP$age_death <- as.numeric(gsub("\\+", "", metadata_ROSMAP$age_death))  #no +
+
+#Demographics 
+
+summary <- metadata_ROSMAP %>%
+  group_by(ceradsc, msex) %>%
+  summarise(
+    n = as.character(n()),
+    Age_Death = paste0(round(mean(age_death, na.rm = TRUE), 1), " ± ", round(sd(age_death, na.rm = TRUE), 2)),
+    Education = paste0(round(mean(educ, na.rm = TRUE), 1), " ± ", round(sd(educ, na.rm = TRUE), 2)),
+    RIN = paste0(round(mean(RIN, na.rm = TRUE), 1), " ± ", round(sd(age_death, na.rm = TRUE), 2)),
+    PMI = paste0(round(mean(pmi, na.rm = TRUE), 1), " ± ", round(sd(age_death, na.rm = TRUE), 2)),
+    Males = as.character(sum(msex == 1, na.rm = TRUE)),
+    Females = as.character(sum(msex == 0, na.rm = TRUE))
+  ) %>%
+  mutate(Sex = ifelse(msex == 1, "Male", "Female"))
 
 #Violin plots for
 
@@ -124,6 +140,52 @@ corrplot(cor_matrix,
 title(main = "Metadata correlation ROSMAP", cex.main = 1.5)
 dev.off()
 
+#Check for balance in covariates
+
+#Continous covariates
+
+numeric_rosmap <- c("age_death", "RIN", "pmi")
+categorical_rosmap <- c("msex", "braaksc", "ceradsc", "cogdx","race", "educ")
+
+covariates <- data.frame(Variable = character(),
+                         Test = character(),
+                         p_value = numeric(),
+                         stringsAsFactors = FALSE)
+
+for (var in numeric_rosmap) {
+  x <- metadata_ROSMAP[[var]]
+  
+  #Test normality (Shapiro-Wilk) (Shapiro needs at least 3 values)
+  if (sum(!is.na(x)) >= 3) {
+    shapiro_result <- shapiro.test(x)
+    
+    if (shapiro_result$p.value > 0.05) {
+      #Normal: ANOVA
+      formula <- as.formula(paste(var, "~ ceradsc"))
+      aov_result <- aov(formula, data = metadata_ROSMAP_DLPFC)
+      p_val <- summary(aov_result)[[1]][["Pr(>F)"]][1]
+      test_used <- "ANOVA"
+    } else {#No normal: Kruskal-Wallis
+      formula <- as.formula(paste(var, "~ ceradsc"))
+      kruskal_result <- kruskal.test(formula, data = metadata_ROSMAP_DLPFC)
+      p_val <- kruskal_result$p.value
+      test_used <- "Kruskal-Wallis"
+    }
+    
+    covariates <- rbind(covariates, data.frame(Variable = var, Test = test_used, p_value = p_val))
+    
+  } else {
+    cat(paste("Variable", var, "has too little data to perform the normality test.\n"))
+  }
+}
+
+#Evaluate categorial variables
+for (var in categorical_rosmap) {
+  tabla <- table(metadata_ROSMAP[[var]], metadata_ROSMAP$ceradsc)
+  chisq_result <- chisq.test(tabla)
+  covariates <- rbind(covariates, data.frame(Variable = var, Test = "Chi-square", p_value = chisq_result$p.value))
+}
+
 #See expression 
 
 counts_ROSMAP1 <- readRDS(file = '/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/data/ROSMAP_RNAseq_rawcounts_DLPFC.rds')%>% 
@@ -177,6 +239,62 @@ annot_rosmap <- AnnotationDbi::select(org.Hs.eg.db,
 annot_rosmap_n <- as.data.frame(table(annot_rosmap$GENETYPE, useNA = "ifany"))
 
 annot_rosmap_n <- annot_rosmap_n %>% rename(group = Var1, value = Freq)
+
+#Demographics per brain region 
+
+#DLPFC
+
+metadata_ROSMAP_DLPFC <- vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/DLPFC/RNA_seq_metadata_DLPFC.txt")
+metadata_ROSMAP_DLPFC$age_death <- as.numeric(gsub("\\+", "", metadata_ROSMAP_DLPFC$age_death))  #no +
+
+summary_DLPFC <- metadata_ROSMAP_DLPFC %>%
+  group_by(ceradsc, msex) %>%
+  summarise(
+    n = as.character(n()),
+    Age_Death = paste0(round(mean(age_death, na.rm = TRUE), 1), " ± ", round(sd(age_death, na.rm = TRUE), 2)),
+    Education = paste0(round(mean(educ, na.rm = TRUE), 1), " ± ", round(sd(educ, na.rm = TRUE), 2)),
+    RIN = paste0(round(mean(RIN, na.rm = TRUE), 1), " ± ", round(sd(RIN, na.rm = TRUE), 2)),
+    PMI = paste0(round(mean(pmi, na.rm = TRUE), 1), " ± ", round(sd(pmi, na.rm = TRUE), 2)),
+    braak = paste(paste0("Braak", names(table(braaksc)), ": ", as.numeric(table(braaksc))), collapse = ", "),
+    Cogdx  = paste(paste0("cogdx", names(table(cogdx)), ": ", as.numeric(table(cogdx))), collapse = ", "),  
+    APOE = paste(paste0("APOE", names(table(apoe_genotype)), ": ", as.numeric(table(apoe_genotype))), collapse = ", ")) %>% 
+  ungroup()
+
+#HCN
+
+metadata_ROSMAP_HCN <-vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/HCN/RNA_seq_metadata_HCN.csv") %>% as.data.frame()
+metadata_ROSMAP_HCN$age_death <- as.numeric(gsub("\\+", "", metadata_ROSMAP_HCN$age_death))  #no +
+
+summary_HCN <- metadata_ROSMAP_HCN %>%
+  group_by(ceradsc, msex) %>%
+  summarise(
+    n = as.character(n()),
+    Age_Death = paste0(round(mean(age_death, na.rm = TRUE), 1), " ± ", round(sd(age_death, na.rm = TRUE), 2)),
+    Education = paste0(round(mean(educ, na.rm = TRUE), 1), " ± ", round(sd(educ, na.rm = TRUE), 2)),
+    RIN = paste0(round(mean(RIN, na.rm = TRUE), 1), " ± ", round(sd(RIN, na.rm = TRUE), 2)),
+    PMI = paste0(round(mean(pmi, na.rm = TRUE), 1), " ± ", round(sd(pmi, na.rm = TRUE), 2)),
+    braak = paste(paste0("Braak", names(table(braaksc)), ": ", as.numeric(table(braaksc))), collapse = ", "),
+    Cogdx  = paste(paste0("cogdx", names(table(cogdx)), ": ", as.numeric(table(cogdx))), collapse = ", "),  
+    APOE = paste(paste0("APOE", names(table(apoe_genotype)), ": ", as.numeric(table(apoe_genotype))), collapse = ", ")) %>% 
+  ungroup()
+
+#PCC
+
+metadata_ROSMAP_PCC<- vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/PCC/RNA_seq_metadata_PCC.csv") %>% as.data.frame()
+metadata_ROSMAP_PCC$age_death <- as.numeric(gsub("\\+", "", metadata_ROSMAP_PCC$age_death))  #no +
+
+summary_PCC <- metadata_ROSMAP_PCC %>%
+  group_by(ceradsc, msex) %>%
+  summarise(
+    n = as.character(n()),
+    Age_Death = paste0(round(mean(age_death, na.rm = TRUE), 1), " ± ", round(sd(age_death, na.rm = TRUE), 2)),
+    Education = paste0(round(mean(educ, na.rm = TRUE), 1), " ± ", round(sd(educ, na.rm = TRUE), 2)),
+    RIN = paste0(round(mean(RIN, na.rm = TRUE), 1), " ± ", round(sd(RIN, na.rm = TRUE), 2)),
+    PMI = paste0(round(mean(pmi, na.rm = TRUE), 1), " ± ", round(sd(pmi, na.rm = TRUE), 2)),
+    braak = paste(paste0("Braak", names(table(braaksc)), ": ", as.numeric(table(braaksc))), collapse = ", "),
+    Cogdx  = paste(paste0("cogdx", names(table(cogdx)), ": ", as.numeric(table(cogdx))), collapse = ", "),  
+    APOE = paste(paste0("APOE", names(table(apoe_genotype)), ": ", as.numeric(table(apoe_genotype))), collapse = ", ")) %>% 
+  ungroup()
 
 ##################################### Mayo Clinic ##################################### 
 
@@ -257,7 +375,7 @@ metadata_cor_Mayo <- metadata_Mayo %>%
 cor_matrix_mayo <- cor(metadata_cor_Mayo, use = "pairwise.complete.obs", method = "pearson")
 
 png("corplot_metadata_Mayo.png", width = 1200, height = 1000, res = 150)
-corrplot(cor_matrix, 
+corrplot(cor_matrix_mayo, 
          method = "ellipse", 
          type = "upper", 
          order = "hclust", 
@@ -265,6 +383,54 @@ corrplot(cor_matrix,
          tl.cex = 0.8)
 title(main = "Metadata correlation Mayo", cex.main = 1.5, line = 2)
 dev.off()
+
+# Check for balance in covariates
+
+#Continous covariates
+
+numeric_mayo <- c("ageDeath", "RIN", "pmi")
+
+covariates_mayo <- data.frame(Variable = character(),
+                         Test = character(),
+                         p_value = numeric(),
+                         stringsAsFactors = FALSE)
+
+for (var in numeric_mayo) {
+  x <- metadata_Mayo[[var]]
+  
+  #Test normality (Shapiro-Wilk) (Shapiro needs at least 3 values)
+  if (sum(!is.na(x)) >= 3) {
+    shapiro_result <- shapiro.test(x)
+    
+    if (shapiro_result$p.value > 0.05) {
+      #Normal: ANOVA
+      formula <- as.formula(paste(var, "~ diagnosis"))
+      aov_result <- aov(formula, data = metadata_Mayo)
+      p_val <- summary(aov_result)[[1]][["Pr(>F)"]][1]
+      test_used <- "ANOVA"
+    } else {#No normal: Kruskal-Wallis
+      formula <- as.formula(paste(var, "~ diagnosis"))
+      kruskal_result <- kruskal.test(formula, data = metadata_Mayo)
+      p_val <- kruskal_result$p.value
+      test_used <- "Kruskal-Wallis"
+    }
+    
+    covariates_mayo <- rbind(covariates_mayo, data.frame(Variable = var, Test = test_used, p_value = p_val))
+    
+  } else {
+    cat(paste("Variable", var, "has too little data to perform the normality test.\n"))
+  }
+}
+
+#Categorical variables
+categorical_mayo <- c("sex", "Braak", "thal", "race")
+
+#Evaluate categorial variables
+for (var in categorical_mayo) {
+  tabla <- table(metadata_Mayo[[var]], metadata_Mayo$diagnosis)
+  chisq_result <- chisq.test(tabla)
+  covariates_mayo <- rbind(covariates_mayo, data.frame(Variable = var, Test = "Chi-square", p_value = chisq_result$p.value))
+}
 
 #See expression 
 
@@ -295,5 +461,40 @@ XIST_UTY_mayo.p  <-ggplot(XIST_UTY_mayo, aes(x = log(UTY), y = log(XIST), color 
 ggsave("XIST_UTY_mayo.jpeg", 
        XIST_UTY_mayo.p,
        device = "jpeg")
+
+#Demographics per brain region 
+
+metadata_Mayo_CRB <- vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
+metadata_Mayo_CRB$ageDeath <- as.numeric(gsub("\\+", "", metadata_Mayo_CRB$ageDeath))  #no +
+
+summary_mayo_CRB <- metadata_Mayo_CRB %>%
+  group_by(diagnosis, sex) %>%
+  summarise(
+    n = as.character(n()),
+    Age_Death = paste0(round(mean(ageDeath, na.rm = TRUE), 1), " ± ", round(sd(ageDeath, na.rm = TRUE), 2)),
+    RIN = paste0(round(mean(RIN, na.rm = TRUE), 1), " ± ", round(sd(RIN, na.rm = TRUE), 2)),
+    PMI = paste0(round(mean(pmi, na.rm = TRUE), 1), " ± ", round(sd(pmi, na.rm = TRUE), 2)),
+    braak = paste(paste0("Braak", names(table(Braak)), ": ", as.numeric(table(Braak))), collapse = ", "),
+    Thal = paste(paste0("Thal", names(table(thal)), ": ", as.numeric(table(thal))), collapse = ", "),
+    APOE = paste(paste0("APOE", names(table(apoeGenotype)), ": ", as.numeric(table(apoeGenotype))), collapse = ", ")
+  ) 
+
+#TC
+
+metadata_Mayo_TC <- vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_metadata_TC.txt")
+metadata_Mayo_TC$ageDeath <- as.numeric(gsub("\\+", "", metadata_Mayo_TC$ageDeath))  #no +
+summary_mayo_TC <- metadata_Mayo_TC %>%
+  group_by(diagnosis, sex) %>%
+  summarise(
+    n = as.character(n()),
+    Age_Death = paste0(round(mean(ageDeath, na.rm = TRUE), 1), " ± ", round(sd(ageDeath, na.rm = TRUE), 2)),
+    RIN = paste0(round(mean(RIN, na.rm = TRUE), 1), " ± ", round(sd(RIN, na.rm = TRUE), 2)),
+    PMI = paste0(round(mean(pmi, na.rm = TRUE), 1), " ± ", round(sd(pmi, na.rm = TRUE), 2)),
+    braak = paste(paste0("Braak", names(table(Braak)), ": ", as.numeric(table(Braak))), collapse = ", "),
+    Thal = paste(paste0("Thal", names(table(thal)), ": ", as.numeric(table(thal))), collapse = ", "),
+    APOE = paste(paste0("APOE", names(table(apoeGenotype)), ": ", as.numeric(table(apoeGenotype))), collapse = ", ")
+  ) 
+
+
 
 #END

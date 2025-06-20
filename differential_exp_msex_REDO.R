@@ -11,12 +11,11 @@ time <- Sys.time()
 cat("# Args:\n")
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 4) {
-  stop("Error: Expected 4 arguments:\n
+if (length(args) != 3) {
+  stop("Error: Expected 3 arguments:\n
        1. Path to counts file (.rds)\n 
        2. Path to metadata file (.txt or .csv)\n
-       3. Brain area name\n
-       4. Batch correction (TRUE or FALSE)\n", 
+       3. Brain area name\n",
        call. = FALSE)
 }
 
@@ -24,17 +23,14 @@ cat("Interpreted args:\n")
 cat("Counts file: ", args[1], "\n")
 cat("Metadata file: ", args[2], "\n")
 cat("Brain area: ", args[3], "\n")
-cat("Batch correction: ", args[4], "\n")
 
 counts <- args[1]
 metadata <- args[2]
 brain_area <- args[3]
-tissue_batch_correction <- args[4] #boolean
 
 cat("# Load libraries\n")
 pacman::p_load("tidyverse", 
                "DESeq2",
-               "sva",
                "pheatmap", 
                "ggplot2", 
                "ggrepel", 
@@ -50,8 +46,8 @@ pacman::p_load("tidyverse",
 # Set seed
 set.seed(10)
 
-counts<- readRDS(file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds") %>% as.data.frame()
-metadata <- vroom::vroom("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/HCN/RNA_seq_metadata_HCN.txt")
+counts<- readRDS(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds") %>% as.data.frame()
+metadata <- vroom::vroom("RNA_seq_metadata_HCN.txt")
 brain_area <- "HCN_ROSMAP"
 
 cat("# Define functions \n")
@@ -62,7 +58,6 @@ load_data <- function(args) {
   counts <- readRDS(file = args[1]) %>% as.data.frame()
   metadata <- vroom::vroom(file = args[2])
   brain_area <- as.character(args[3])  #Text in ""
-  tissue_batch_correction <- as.logical(args[4])  #Boolean
   
   return(list(counts = counts, metadata = metadata))
 }
@@ -83,23 +78,12 @@ convert_ens_to_symbol <- function(ensembl_ids) {
 
 #Function to delete duplicates
 del_dupl <- function(counts) {
-  repeated_values <- counts %>%
+  counts_clean <- counts %>%
     group_by(feature) %>%
-    filter(n() > 1) %>%
-    distinct(feature) %>%
-    pull(feature)
+    summarize(across(-feature, ~median(.x, na.rm = TRUE)), .groups = "drop") %>%
+    mutate(across(-feature, as.integer))
   
-  repeated_rows <- counts[counts$feature %in% repeated_values, ]
-  repeated_rows <- repeated_rows[order(repeated_rows$feature),]
-  repeated_rows <- repeated_rows %>%
-    group_by(feature) %>%
-    summarize(across(everything(), \(x) median(x, na.rm = TRUE)))
-  
-  counts <- counts %>% filter(!feature %in% repeated_rows$feature)
-  counts <- bind_rows(counts, repeated_rows)
-  counts <- counts %>% mutate(across(-feature, as.integer))
-  
-  return(counts)
+  return(counts_clean)
 }
 
 #Pre-process data
