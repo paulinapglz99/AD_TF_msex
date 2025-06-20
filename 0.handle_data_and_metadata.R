@@ -81,10 +81,10 @@ names(metadata_tissue_ROSMAP) <- tissues_ROSMAP
 
 #This data was directly downloaded from https://www.synapse.org/#!Synapse:syn3388564 
 
-counts_one <- vroom::vroom(file = '/datos/rosmap/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch1_gene_all_counts_matrix_clean.txt.gz')
-counts_two <- vroom::vroom(file = '/datos/rosmap/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch2_gene_all_counts_matrix_clean.txt.gz') 
-counts_three <- vroom::vroom(file = '/datos/rosmap/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch3_gene_all_counts_matrix_clean.txt.gz')
-counts_four <- vroom::vroom(file = '/datos/rosmap/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch4_gene_all_counts_matrix_clean.txt.gz')
+counts_one <- vroom::vroom(file = '/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch1_gene_all_counts_matrix_clean.txt.gz')
+counts_two <- vroom::vroom(file = '/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch2_gene_all_counts_matrix_clean.txt.gz') 
+counts_three <- vroom::vroom(file = '/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch3_gene_all_counts_matrix_clean.txt.gz')
+counts_four <- vroom::vroom(file = '/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/raw_counts/ROSMAP_batch4_gene_all_counts_matrix_clean.txt.gz')
 
 #Merge expression data into one
 
@@ -126,10 +126,6 @@ counts_PCC_ROSMAP <- counts_ROSMAP[, c(colnames(counts_ROSMAP) %in% metadata_tis
 dim(counts_PCC_ROSMAP)
 #[1] 60607   672
 
-counts_FRONTAL_ROSMAP <- counts_DLPFC_ROSMAP %>% left_join(counts_FC_ROSMAP, by = "feature")
-dim(counts_FRONTAL_ROSMAP)
-#[1] 60607  1265
-
 #Save count data for ROSMAP ---- ---
 # counts_list <- list(
 #   "DLPFC" = counts_DLPFC_ROSMAP,
@@ -141,40 +137,27 @@ dim(counts_FRONTAL_ROSMAP)
 # 
 # #Save for each one
 # for (tissue in names(counts_list)) {
-#   file_path <- paste0("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/",
+#  file_path <- paste0("/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/",
 #                       tissue, "/ROSMAP_RNAseq_rawcounts_", tissue, ".rds")
-#   
+# 
 #   saveRDS(counts_list[[tissue]], file = file_path)
 # }
 
-#Counts for FRONTAL
+#Save metadata
 
-saveRDS(counts_FRONTAL_ROSMAP, file ="/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/FRONTAL/ROSMAP_RNAseq_rawcounts_FRONTAL_ROSMAP.rds")
-
-#Save metadata for ROSMAP --- --- 
-
-metadata_FRONTAL_ROSMAP <- metadata_ROSMAP %>% filter(specimenID %in% colnames(counts_FRONTAL_ROSMAP)[-1])
-dim(metadata_FRONTAL_ROSMAP)
-
-# tissues <- c("frontal cortex" = "FC", 
-#              "temporal cortex" = "TC", 
-#              "dorsolateral prefrontal cortex" = "DLPFC", 
-#              "Head of caudate nucleus" = "HCN", 
+# tissues <- c("frontal cortex" = "FC",
+#              "temporal cortex" = "TC",
+#              "dorsolateral prefrontal cortex" = "DLPFC",
+#              "Head of caudate nucleus" = "HCN",
 #              "posterior cingulate cortex" = "PCC"
-#             # "FRONTAL_ROSMAP" =  "FRONTAL_ROSMAP"
 #              )
 # 
 # for (tissue in names(tissues)) {
-#   file_path <- paste0("/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/",
+#   file_path <- paste0("/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/",
 #                       tissues[tissue], "/RNA_seq_metadata_", tissues[tissue], ".csv")
-#   
+# 
 #   vroom::vroom_write(metadata_tissue_ROSMAP[[tissue]], file = file_path)
 # }
-# 
-# #FRONTAL_ROSMAP
-# 
-# vroom::vroom_write(metadata_FRONTAL_ROSMAP,
-#                    file = "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/FRONTAL/RNA_seq_metadata_FRONTAL_ROSMAP.csv")
 
 #Summarize ROSMAP --- ---
 
@@ -260,206 +243,206 @@ sum_rosmap_cerad.p
 
 ##################################### MSBB ##################################### 
 
-metadata_MSBB <- vroom::vroom(file = "/datos/rosmap/data_by_counts/metadata/RNAseq_Harmonization_MSBB_combined_metadata.csv")
-metadata_MSBB <- metadata_MSBB %>% rename(ceradsc = CERAD, braaksc = Braak)
-
-#Filter MSSB metadata 
-#Based on CDR classification, subjects are grouped as no cognitive deficits (CDR = 0),
-#questionable dementia (CDR = 0.5), mild dementia (CDR = 1.0), moderate dementia (CDR = 2.0), and severe to terminal dementia (CDR = 3.0–5.0). 
-
-metadata_MSBB <- metadata_MSBB %>%
-  filter(assay == "rnaSeq") %>%  
-  mutate(NIA_reagan_ADLikelihood = case_when(         
-    (ceradsc == 1 & (braaksc == 5 | braaksc ==  6)) ~ "3", #High likelihood
-    (ceradsc == 2 & (braaksc == 3 | braaksc == 4)) ~ "2", #Intermediate likelihood
-    (ceradsc == 3 & (braaksc == 1 | braaksc == 2)) ~ "1", #Low likelihood
-    ceradsc == 4 ~ "0",  #No AD (0)
-    TRUE ~ NA_character_  # Handle no-specified cases
-  )) %>% 
-  mutate(dicho_NIA_reagan = case_when(
-    (NIA_reagan_ADLikelihood == "0" | NIA_reagan_ADLikelihood == "1") ~ "0", #no AD pathology
-    (NIA_reagan_ADLikelihood == "2" | NIA_reagan_ADLikelihood == "3") ~ "1"  #AD pathology
-  )) %>%
-  mutate(CDR_dicho = case_when(
-    CDR < 2  ~ "no_AD", 
-    CDR >= 0 ~ "dementia", 
-    TRUE ~ NA_character_ 
-  )) %>%
-  mutate(is_resilient = case_when(
-    CDR %in% c(3.0, 4.0, 5.0) & (braaksc != 0 & (ceradsc == 1 | ceradsc ==2)) ~ "resilient", 
-    TRUE ~ NA_character_ 
-  )) %>% 
-  mutate(is_AD = case_when(
-    CDR == 0 | ceradsc == 4 ~ "noAD",
-    (CDR %in% c(3.0, 4.0, 5.0) & ceradsc == 1) ~ "AD",
-    CDR %in% c(1.0, 2.0) ~ "MCI",
-    TRUE ~ NA_character_
-  ))
-table(metadata_MSBB$CDR_dicho, useNA = "ifany")
-
-table(metadata_MSBB$NIA_reagan_ADLikelihood, useNA = "ifany")
-
-table(metadata_MSBB$ceradsc, useNA = "ifany")
-
-#Define metadata by ceradsc#Define metadata by brain region --- ---
-
-tissues_MSBB <- unique(metadata_MSBB$tissue)
-
-metadata_tissue_MSBB <- lapply(tissues_MSBB,
-                               function(tissues_MSBB) summarize_by_tissue(metadata_MSBB, tissues_MSBB))
-
-names(metadata_tissue_MSBB) <- tissues_MSBB
-
-# Metadata dim superior temporal gyrus:  334 36 
-# NIA-Reagan diagnosis table:
-#   
-#   0    1 <NA> 
-#   49   20  265 
-# Metadata dim parahippocampal gyrus:  315 36 
-# NIA-Reagan diagnosis table:
-#   
-#   0    1 <NA> 
-#   43   16  256 
-# Metadata dim frontal pole:  310 36 
-# NIA-Reagan diagnosis table:
-#   
-#   0    1 <NA> 
-#   47   19  244 
-# Metadata dim inferior frontal gyrus:  308 36 
-# NIA-Reagan diagnosis table:
-#   
-#   0    1 <NA> 
-#   45   19  244 
-# Metadata dim prefrontal cortex:  15 36 
-# NIA-Reagan diagnosis table:
-#   
-#   1 <NA> 
-#   2   13 
-
-#Save metadata --- --- 
-
-#STG
-# vroom::vroom_write(metadata_tissue_MSBB[["superior temporal gyrus"]],
-#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/metadata/MSBB_RNAseq_metadata_STG.txt")
-# #PHG
-# vroom::vroom_write(metadata_tissue_MSBB[["parahippocampal gyrus"]],
-#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_metadata_PHG.txt")
-#FP
+# metadata_MSBB <- vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/metadata/RNAseq_Harmonization_Mayo_combined_metadata.csv")
+# metadata_MSBB <- metadata_MSBB %>% rename(ceradsc = CERAD, braaksc = Braak)
 # 
-# vroom::vroom_write(metadata_tissue_MSBB[["frontal pole"]],
-#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_metadata_FP.txt")
-#inferior frontal gyrus IFG
-# vroom::vroom_write(metadata_tissue_MSBB[["inferior frontal gyrus"]],
-#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_metadata_IFG.txt")
-# #PFC
+# #Filter MSSB metadata 
+# #Based on CDR classification, subjects are grouped as no cognitive deficits (CDR = 0),
+# #questionable dementia (CDR = 0.5), mild dementia (CDR = 1.0), moderate dementia (CDR = 2.0), and severe to terminal dementia (CDR = 3.0–5.0). 
 # 
-# vroom::vroom_write(metadata_tissue_MSBB[["prefrontal cortex"]],
-#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_metadata_PFC.txt")
-
-#Read expression data --- --- 
-
-counts_MSSB <-  vroom::vroom(file = "/datos/rosmap/data_by_counts/MSBB_counts/MSBB_gene_all_counts_matrix_clean.txt")
-
-#Stratify data by brain region --- --- 
-
-#Counts "superior temporal gyrus" (STG)
-counts_STG_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% metadata_tissue_MSBB[[1]]$specimenID)] %>%
-  mutate(counts_MSSB[1], .before = 1)
-dim(counts_STG_MSBB)
-
-#Counts from parahippocampal gyrus (PHCG)
-
-counts_PHG_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% metadata_tissue_MSBB[[2]]$specimenID)] %>%
-  mutate(counts_MSSB[1], .before = 1)
-dim(counts_PHG_MSBB)
-
-#Counts for frontal pole (FP)
-counts_FP_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% unique(metadata_tissue_MSBB[[3]]$specimenID))] %>%
-  mutate(counts_MSSB[1], .before = 1)
-dim(counts_FP_MSBB)
-
-#Counts for inferior frontal gyrus (IFG)
-counts_IFG_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% unique(metadata_tissue_MSBB[[4]]$specimenID))] %>%
-  mutate(counts_MSSB[1], .before = 1)
-dim(counts_IFG_MSBB)
-
-#Counts for prefrontal cortex (PFC)
-counts_PFC_MSBB <- counts_MSSB[, c(colnames(counts_MSSB) %in% metadata_tissue_MSBB[[5]]$specimenID)] %>% 
-  mutate(counts_MSSB[1], .before = 1)
-dim(counts_PFC_MSBB)
-
-#Save count data for MSBB ---- ---
+# metadata_MSBB <- metadata_MSBB %>%
+#   filter(assay == "rnaSeq") %>%  
+#   mutate(NIA_reagan_ADLikelihood = case_when(         
+#     (ceradsc == 1 & (braaksc == 5 | braaksc ==  6)) ~ "3", #High likelihood
+#     (ceradsc == 2 & (braaksc == 3 | braaksc == 4)) ~ "2", #Intermediate likelihood
+#     (ceradsc == 3 & (braaksc == 1 | braaksc == 2)) ~ "1", #Low likelihood
+#     ceradsc == 4 ~ "0",  #No AD (0)
+#     TRUE ~ NA_character_  # Handle no-specified cases
+#   )) %>% 
+#   mutate(dicho_NIA_reagan = case_when(
+#     (NIA_reagan_ADLikelihood == "0" | NIA_reagan_ADLikelihood == "1") ~ "0", #no AD pathology
+#     (NIA_reagan_ADLikelihood == "2" | NIA_reagan_ADLikelihood == "3") ~ "1"  #AD pathology
+#   )) %>%
+#   mutate(CDR_dicho = case_when(
+#     CDR < 2  ~ "no_AD", 
+#     CDR >= 0 ~ "dementia", 
+#     TRUE ~ NA_character_ 
+#   )) %>%
+#   mutate(is_resilient = case_when(
+#     CDR %in% c(3.0, 4.0, 5.0) & (braaksc != 0 & (ceradsc == 1 | ceradsc ==2)) ~ "resilient", 
+#     TRUE ~ NA_character_ 
+#   )) %>% 
+#   mutate(is_AD = case_when(
+#     CDR == 0 | ceradsc == 4 ~ "noAD",
+#     (CDR %in% c(3.0, 4.0, 5.0) & ceradsc == 1) ~ "AD",
+#     CDR %in% c(1.0, 2.0) ~ "MCI",
+#     TRUE ~ NA_character_
+#   ))
+# table(metadata_MSBB$CDR_dicho, useNA = "ifany")
 # 
-# # Counts "superior temporal gyrus" (STG)
-# saveRDS(counts_STG_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/STG/MSBB_RNAseq_rawcounts_STG.rds")
-#  
-# # #Counts for parahippocampal gyrus (PHG)
-#  
-# saveRDS(counts_PHG_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_rawcounts_PHG.rds")
-#  
-# # #Counts for frontal pole (FP)
+# table(metadata_MSBB$NIA_reagan_ADLikelihood, useNA = "ifany")
 # 
-# saveRDS(counts_FP_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_rawcounts_FP.rds")
+# table(metadata_MSBB$ceradsc, useNA = "ifany")
 # 
-# # Counts for inferior frontal gyrus (IFG)
+# #Define metadata by ceradsc#Define metadata by brain region --- ---
 # 
-# saveRDS(counts_IFG_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_rawcounts_IFG.rds")
-#  
-# # #Counts for prefrontal cortex (PFC)
-#  
-# saveRDS(counts_PFC_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_rawcounts_counts_PFC_MSBB.rds")
-# # #Counts for FRONTAL_MSBB
-#  
-# saveRDS(FRONTAL_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds")
-
-#Summarize MSBB --- ---
-
-sum_msbb <- metadata_MSBB[,c("tissue", "ceradsc")]
-
-sum_msbb <- sum_msbb %>%
-  mutate(ceradsc = ifelse(is.na(ceradsc), "NA", as.character(ceradsc)))
-
-sum_msbb <- sum_msbb %>%
-  group_by(tissue, ceradsc) %>%
-  summarise(count = n()) %>%
-  ungroup()
-
-sum_msbb <- sum_msbb %>%
-  mutate(
-    cerad_description = recode(as.character(ceradsc), !!!ceradscore)
-  )
-
-#Plot
-
-sum_msbb.p <- ggplot(sum_msbb, aes(x = tissue, y = count, fill = cerad_description)) +
-  geom_bar(stat = "identity") +
-  geom_text(aes(label = count), position = position_stack(vjust = 0.5)) + # Números de cada stack
-  # geom_text(data = N, aes(x = tissue, y = total, label = total), vjust = -0.5) + # Números totales (N)
-  theme_minimal() +
-  labs(x = "Tissue", y = "Count", fill = "CERAD score") +
-  ggtitle("CERAD score proportions by tissue - MSBB")
-sum_msbb.p
-
-###PETITION
-
-#FRONTAL_MSBB
-
-counts_FRONTAL_MSBB <- counts_IFG_MSBB %>% left_join(counts_FP_MSBB) %>% left_join(counts_PFC_MSBB)
-dim(counts_FRONTAL_MSBB)
-
-metadata_FRONTAL_MSBB <- metadata_MSBB %>% filter(specimenID %in% colnames(counts_FRONTAL_MSBB)[-1])
-# # #Counts for FRONTAL_MSBB
-#  
-# saveRDS(FRONTAL_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds")
-
-#metadata for FRONTAL_MSBB
-
-# vroom::vroom_write(metadata_FRONTAL_MSBB,
-#                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt")
+# tissues_MSBB <- unique(metadata_MSBB$tissue)
+# 
+# metadata_tissue_MSBB <- lapply(tissues_MSBB,
+#                                function(tissues_MSBB) summarize_by_tissue(metadata_MSBB, tissues_MSBB))
+# 
+# names(metadata_tissue_MSBB) <- tissues_MSBB
+# 
+# # Metadata dim superior temporal gyrus:  334 36 
+# # NIA-Reagan diagnosis table:
+# #   
+# #   0    1 <NA> 
+# #   49   20  265 
+# # Metadata dim parahippocampal gyrus:  315 36 
+# # NIA-Reagan diagnosis table:
+# #   
+# #   0    1 <NA> 
+# #   43   16  256 
+# # Metadata dim frontal pole:  310 36 
+# # NIA-Reagan diagnosis table:
+# #   
+# #   0    1 <NA> 
+# #   47   19  244 
+# # Metadata dim inferior frontal gyrus:  308 36 
+# # NIA-Reagan diagnosis table:
+# #   
+# #   0    1 <NA> 
+# #   45   19  244 
+# # Metadata dim prefrontal cortex:  15 36 
+# # NIA-Reagan diagnosis table:
+# #   
+# #   1 <NA> 
+# #   2   13 
+# 
+# #Save metadata --- --- 
+# 
+# #STG
+# # vroom::vroom_write(metadata_tissue_MSBB[["superior temporal gyrus"]],
+# #                    file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/STG/metadata/MSBB_RNAseq_metadata_STG.txt")
+# # #PHG
+# # vroom::vroom_write(metadata_tissue_MSBB[["parahippocampal gyrus"]],
+# #                    file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_metadata_PHG.txt")
+# #FP
+# # 
+# # vroom::vroom_write(metadata_tissue_MSBB[["frontal pole"]],
+# #                    file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_metadata_FP.txt")
+# #inferior frontal gyrus IFG
+# # vroom::vroom_write(metadata_tissue_MSBB[["inferior frontal gyrus"]],
+# #                    file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_metadata_IFG.txt")
+# # #PFC
+# # 
+# # vroom::vroom_write(metadata_tissue_MSBB[["prefrontal cortex"]],
+# #                    file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_metadata_PFC.txt")
+# 
+# #Read expression data --- --- 
+# 
+# counts_MSSB <-  vroom::vroom(file = "STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/MSBB_gene_all_counts_matrix_clean.txt")
+# 
+# #Stratify data by brain region --- --- 
+# 
+# #Counts "superior temporal gyrus" (STG)
+# counts_STG_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% metadata_tissue_MSBB[[1]]$specimenID)] %>%
+#   mutate(counts_MSSB[1], .before = 1)
+# dim(counts_STG_MSBB)
+# 
+# #Counts from parahippocampal gyrus (PHCG)
+# 
+# counts_PHG_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% metadata_tissue_MSBB[[2]]$specimenID)] %>%
+#   mutate(counts_MSSB[1], .before = 1)
+# dim(counts_PHG_MSBB)
+# 
+# #Counts for frontal pole (FP)
+# counts_FP_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% unique(metadata_tissue_MSBB[[3]]$specimenID))] %>%
+#   mutate(counts_MSSB[1], .before = 1)
+# dim(counts_FP_MSBB)
+# 
+# #Counts for inferior frontal gyrus (IFG)
+# counts_IFG_MSBB <- counts_MSSB[, (colnames(counts_MSSB) %in% unique(metadata_tissue_MSBB[[4]]$specimenID))] %>%
+#   mutate(counts_MSSB[1], .before = 1)
+# dim(counts_IFG_MSBB)
+# 
+# #Counts for prefrontal cortex (PFC)
+# counts_PFC_MSBB <- counts_MSSB[, c(colnames(counts_MSSB) %in% metadata_tissue_MSBB[[5]]$specimenID)] %>% 
+#   mutate(counts_MSSB[1], .before = 1)
+# dim(counts_PFC_MSBB)
+# 
+# #Save count data for MSBB ---- ---
+# # 
+# # # Counts "superior temporal gyrus" (STG)
+# # saveRDS(counts_STG_MSBB, file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/STG/MSBB_RNAseq_rawcounts_STG.rds")
+# #  
+# # # #Counts for parahippocampal gyrus (PHG)
+# #  
+# # saveRDS(counts_PHG_MSBB, file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/PHG/MSBB_RNAseq_rawcounts_PHG.rds")
+# #  
+# # # #Counts for frontal pole (FP)
+# # 
+# # saveRDS(counts_FP_MSBB, file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/FP/MSBB_RNAseq_rawcounts_FP.rds")
+# # 
+# # # Counts for inferior frontal gyrus (IFG)
+# # 
+# # saveRDS(counts_IFG_MSBB, file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/IFG/MSBB_RNAseq_rawcounts_IFG.rds")
+# #  
+# # # #Counts for prefrontal cortex (PFC)
+# #  
+# # saveRDS(counts_PFC_MSBB, file = "/STORAGE/genut/alzheimer/data_by_counts/MSBB_counts/counts_by_tissue/PFC/MSBB_RNAseq_rawcounts_counts_PFC_MSBB.rds")
+# # # #Counts for FRONTAL_MSBB
+# #  
+# # saveRDS(FRONTAL_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds")
+# 
+# #Summarize MSBB --- ---
+# 
+# sum_msbb <- metadata_MSBB[,c("tissue", "ceradsc")]
+# 
+# sum_msbb <- sum_msbb %>%
+#   mutate(ceradsc = ifelse(is.na(ceradsc), "NA", as.character(ceradsc)))
+# 
+# sum_msbb <- sum_msbb %>%
+#   group_by(tissue, ceradsc) %>%
+#   summarise(count = n()) %>%
+#   ungroup()
+# 
+# sum_msbb <- sum_msbb %>%
+#   mutate(
+#     cerad_description = recode(as.character(ceradsc), !!!ceradscore)
+#   )
+# 
+# #Plot
+# 
+# sum_msbb.p <- ggplot(sum_msbb, aes(x = tissue, y = count, fill = cerad_description)) +
+#   geom_bar(stat = "identity") +
+#   geom_text(aes(label = count), position = position_stack(vjust = 0.5)) + # Números de cada stack
+#   # geom_text(data = N, aes(x = tissue, y = total, label = total), vjust = -0.5) + # Números totales (N)
+#   theme_minimal() +
+#   labs(x = "Tissue", y = "Count", fill = "CERAD score") +
+#   ggtitle("CERAD score proportions by tissue - MSBB")
+# sum_msbb.p
+# 
+# ###PETITION
+# 
+# #FRONTAL_MSBB
+# 
+# counts_FRONTAL_MSBB <- counts_IFG_MSBB %>% left_join(counts_FP_MSBB) %>% left_join(counts_PFC_MSBB)
+# dim(counts_FRONTAL_MSBB)
+# 
+# metadata_FRONTAL_MSBB <- metadata_MSBB %>% filter(specimenID %in% colnames(counts_FRONTAL_MSBB)[-1])
+# # # #Counts for FRONTAL_MSBB
+# #  
+# # saveRDS(FRONTAL_MSBB, file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_rawcounts_counts_FRONTAL_MSBB.rds")
+# 
+# #metadata for FRONTAL_MSBB
+# 
+# # vroom::vroom_write(metadata_FRONTAL_MSBB,
+# #                    file = "/datos/rosmap/data_by_counts/MSBB_counts/counts_by_tissue/FRONTAL/MSBB_RNAseq_metadata_FRONTAL_MSBB.txt")
 
 ##################################### Mayo Clinic ##################################### 
 
-metadata_Mayo <- vroom::vroom(file = "/datos/rosmap/data_by_counts/metadata/RNAseq_Harmonization_Mayo_combined_metadata.csv")
+metadata_Mayo <- vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/metadata/RNAseq_Harmonization_Mayo_combined_metadata.csv")
 
 tissues_Mayo <- unique(metadata_Mayo$tissue)
 
@@ -470,16 +453,16 @@ names(metadata_tissue_Mayo) <- tissues_Mayo
 
 #Metatada Mayo save --- ---
 
-# vroom::vroom_write(metadata_tissue_Mayo[["cerebellum"]],
-#        file = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
-# 
-# 
-# vroom::vroom_write(metadata_tissue_Mayo[["temporal cortex"]],
-#       file = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_metadata_TC.txt")
+vroom::vroom_write(metadata_tissue_Mayo[["cerebellum"]],
+       file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
+
+
+vroom::vroom_write(metadata_tissue_Mayo[["temporal cortex"]],
+      file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_metadata_TC.txt")
 
 #Get expression data --- ---
 
-counts_Mayo <-  vroom::vroom(file = "/datos/rosmap/data_by_counts/Mayo_counts/Mayo_gene_all_counts_matrix_clean.txt")
+counts_Mayo <-  vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/Mayo_gene_all_counts_matrix_clean.txt")
 
 #Stratify by brain region --- ---
 
@@ -497,12 +480,12 @@ dim(counts_TC_Mayo)
 #Save count data for Mayo ---- ---
 
 # Counts for cerebellum
-# 
-# saveRDS(counts_CRB_Mayo, file = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds")
-# 
-# # #Counts for Temporal cortex
-# 
-# saveRDS(counts_TC_Mayo, file = "/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_rawcounts_TC.rds")
+
+saveRDS(counts_CRB_Mayo, file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds")
+
+#Counts for Temporal cortex
+
+saveRDS(counts_TC_Mayo, file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/counts_by_tissue/TC/Mayo_RNAseq_rawcounts_TC.rds")
 
 #Summarize Mayo --- ---
 
@@ -518,7 +501,7 @@ sum_mayo <- sum_mayo %>%
 
 sum_mayo.p <- ggplot(sum_mayo, aes(x = tissue, y = count, fill = diagnosis)) +
   geom_bar(stat = "identity") +
-  geom_text(aes(label = count), position = position_stack(vjust = 0.5)) + # Números de cada stack
+  geom_text(aes(label = count), position = position_stack(vjust = 0.5)) +
   # geom_text(data = N, aes(x = tissue, y = total, label = total), vjust = -0.5) + # Números totales (N)
   theme_minimal() +
   labs(x = "Tissue", y = "Count", fill = "Diagnosis") +

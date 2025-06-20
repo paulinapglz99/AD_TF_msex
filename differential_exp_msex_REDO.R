@@ -46,9 +46,9 @@ pacman::p_load("tidyverse",
 # Set seed
 set.seed(10)
 
-counts<- readRDS(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/HCN/ROSMAP_RNAseq_rawcounts_HCN.rds") %>% as.data.frame()
-metadata <- vroom::vroom("RNA_seq_metadata_HCN.txt")
-brain_area <- "HCN_ROSMAP"
+counts<- readRDS(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds") %>% as.data.frame()
+metadata <- vroom::vroom("/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/PCC/RNA_seq_metadata_PCC.csv")
+brain_area <- "PCC_ROSMAP"
 
 cat("# Define functions \n")
 
@@ -78,12 +78,23 @@ convert_ens_to_symbol <- function(ensembl_ids) {
 
 #Function to delete duplicates
 del_dupl <- function(counts) {
-  counts_clean <- counts %>%
+  repeated_values <- counts %>%
     group_by(feature) %>%
-    summarize(across(-feature, ~median(.x, na.rm = TRUE)), .groups = "drop") %>%
-    mutate(across(-feature, as.integer))
+    filter(n() > 1) %>%
+    distinct(feature) %>%
+    pull(feature)
   
-  return(counts_clean)
+  repeated_rows <- counts[counts$feature %in% repeated_values, ]
+  repeated_rows <- repeated_rows[order(repeated_rows$feature),]
+  repeated_rows <- repeated_rows %>%
+    group_by(feature) %>%
+    summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE)), .groups = "drop")
+  
+  counts <- counts %>% filter(!feature %in% repeated_rows$feature)
+  counts <- bind_rows(counts, repeated_rows)
+  counts <- counts %>% mutate(across(-feature, as.integer))
+  
+  return(counts)
 }
 
 #Pre-process data
@@ -92,22 +103,21 @@ preprocess_data <- function(counts, metadata, condition_column) {
   print(dim(metadata))
   print(dim(counts))
   counts <- counts[-c(1:4), ]
-
-  counts <- counts %>%
-    mutate(feature = str_remove(feature, "\\..*$")) %>%
-    del_dupl() %>%
-    column_to_rownames(var = "feature")
+  print(dim(counts))
   
-  #Ensure ceradsc is treated as a factor
-  metadata <- metadata %>% 
-    dplyr::filter(ceradsc %in% c("1", "4")) %>% 
-    mutate(ceradsc = factor(ceradsc))
+  counts <- counts %>% mutate(feature = str_remove(feature, "\\..*$"))
+  counts <- del_dupl(counts)
+  rownames(counts) <- NULL
+  counts <- counts %>% column_to_rownames(var = "feature")
+  
+  #Ensure condition_column is treated as a factor
+  metadata <- metadata %>% mutate(condition_column = factor(condition_column))
   
   cat("# Filter metadata based on conditions\n")
   if ("exclude" %in% colnames(metadata)) {
     metadata <- metadata[metadata$exclude != TRUE | is.na(metadata$exclude), ]
   }
-  metadata <- metadata %>% filter(!is.na(ceradsc))
+  metadata <- metadata %>% filter(!is.na(condition_column))
   print(dim(metadata))
   
   cat("#Filter NAs in sequencingBatch\n")
@@ -123,25 +133,109 @@ preprocess_data <- function(counts, metadata, condition_column) {
   
   specimenIDs_in_counts <- colnames(counts)  #Assuming that the first column is not a specimenID
   metadata <- metadata %>%
-    filter(specimenID %in% specimenIDs_in_counts,
-           !is.na(!!sym(condition_column)),
-           !is.na(pmi))
+    dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  print(dim(metadata))
   
-  counts <- counts %>% dplyr::select(any_of(metadata$specimenID))
+  specimenIDs <- metadata$specimenID
+  counts <- counts %>% 
+    dplyr::select(c(1, any_of(specimenIDs)))
+  print(dim(counts))
   
-  print(paste0("Metadata dim: ", dim(metadata), 
-               "\n", "Counts dim: ", dim(counts)))
-
-    return(list(counts = counts, metadata = metadata))
+  specimenIDs_in_counts <- colnames(counts)  #Assuming that the first column is not a specimenID
+  metadata <- metadata %>% dplyr::filter(specimenID %in% specimenIDs_in_counts)
+  
+  #Drop NA in metadata
+  metadata <- metadata %>% drop_na(pmi)
+  
+  print(dim(metadata))
+  return(list(counts = counts, metadata = metadata))
   
 }
+
+counts = preprocessed_data$counts
+metadata = preprocessed_data$metadata
+condition_column = "msex"
+design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc"
+
 
 #Run deseq
 
 run_deseq <- function(counts, metadata, condition_column, design_vars) {
+  
+  # Verificar alineamiento counts y metadata
+  if (!all(colnames(counts) %in% metadata$specimenID)) {
+    stop("Not all columns in counts have corresponding specimenIDs in metadata!")
+  }
+  
+  # Filtrar y alinear metadata
+  metadata <- metadata %>%
+    filter(specimenID %in% colnames(counts)) %>%
+    arrange(match(specimenID, colnames(counts)))
+  
+  # Extraer variables de la fórmula
+  design_formula <- as.formula(design_vars)
+  vars <- all.vars(design_formula)
+  
+  # Construir coldata alineado
+  coldata <- metadata %>%
+    select(specimenID, all_of(vars))
+  
+  # Convertir variables categóricas a factor
+  for (v in vars) {
+    if (is.character(coldata[[v]])) {
+      coldata[[v]] <- as.factor(coldata[[v]])
+    }
+  }
+  
+  # Convertir condition_column a factor (por seguridad)
+  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
+  coldata <- droplevels(coldata)
+  
+  # Verificar niveles en condition_column
+  if (nlevels(coldata[[condition_column]]) < 2) {
+    stop(paste("Variable", condition_column, "has less than two levels."))
+  }
+  
+  # Relevel si existe "control"
+  if ("control" %in% levels(coldata[[condition_column]])) {
+    coldata[[condition_column]] <- relevel(coldata[[condition_column]], ref = "control")
+  }
+  
+  # Escalamiento RIN y PMI
+  for (var in c("RIN", "pmi")) {
+    if (var %in% vars) {
+      val_mean <- mean(coldata[[var]], na.rm = TRUE)
+      val_sd <- sd(coldata[[var]], na.rm = TRUE)
+      if (val_mean >= 5 || val_sd >= 5) {
+        message(paste("Scaling", var, "for having mean or sd > 5"))
+        coldata[[var]] <- scale(coldata[[var]])
+      }
+    }
+  }
+  
+  # Finalmente correr DESeq2
+  dds <- DESeqDataSetFromMatrix(countData = counts, 
+                                colData = coldata,
+                                design = design_formula)
+  dds <- DESeq(dds)
+  
+  return(list(dds = dds, 
+              coldata = coldata,
+              design_formula = design_formula))
+}
+
+
+
+run_deseq <- function(counts, metadata, condition_column, design_vars) {
+  #Build design formula
+  design_formula <- as.formula(design_vars)
+  vars <- all.vars(design_formula)
+  
   #Prepare coldata
   coldata <- data.frame(specimenID = colnames(counts)) %>%
-    left_join(metadata, by = "specimenID")
+    left_join(metadata, by = "specimenID") %>% 
+    dplyr::select(specimenID, all_of(vars)) %>% 
+    drop_na()
   #Ensure that msex is a factor if present
   if (!is.factor(coldata$msex)) {
     coldata$msex <- as.factor(coldata$msex)
@@ -166,9 +260,7 @@ run_deseq <- function(counts, metadata, condition_column, design_vars) {
       coldata[[var]] <- scale(coldata[[var]])
     }
   }
-  #Build design formula
-  design_formula <- as.formula(design_vars)
-  
+
   #Run DESeq2
    dds <- DESeqDataSetFromMatrix(countData = counts, 
                                  colData = coldata,
@@ -179,6 +271,12 @@ run_deseq <- function(counts, metadata, condition_column, design_vars) {
               coldata = coldata,
               design_formula = design_formula))
 }
+
+de_results_AD <- run_deseq(counts = preprocessed_data$counts, 
+                           metadata = preprocessed_data$metadata,
+                           condition_column = "msex", 
+                           design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc") #I'm expecting interaction between sex and condition
+
 
 #Extract DEGS
 
@@ -435,7 +533,7 @@ de_results_1 <- run_deseq(male_counts,
                           design_vars = "~ sequencingBatch + pmi + RIN + ceradsc")
 
 #Results males
-DEGS_1 <-extract_DEGS(de_results_1$dds, 
+DEGS_1 <- extract_DEGS(de_results_1$dds, 
                       condition_column = "ceradsc", 
                       coldata = de_results_1$coldata, 
                       padj.v = 0.05,
@@ -591,8 +689,8 @@ if (!is.null(GSEA_0$simatrix_MF)) {
 cat("########## AD females vs AD males  #######\n")
 
 #DEA Control female vs AD females
-de_results_AD <- run_deseq(preprocessed_data$counts, 
-                           preprocessed_data$metadata,
+de_results_AD <- run_deseq(counts = preprocessed_data$counts, 
+                           metadata = preprocessed_data$metadata,
                            condition_column = "msex", 
                            design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc") #I'm expecting interaction between sex and condition
 
