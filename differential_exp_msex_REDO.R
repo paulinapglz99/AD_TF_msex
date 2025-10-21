@@ -46,9 +46,9 @@ pacman::p_load("tidyverse",
 # Set seed
 set.seed(10)
 
-counts<- readRDS(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds") %>% as.data.frame()
-metadata <- vroom::vroom("/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/PCC/RNA_seq_metadata_PCC.csv")
-brain_area <- "PCC_ROSMAP"
+# counts<- readRDS(file = "/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/PCC/ROSMAP_RNAseq_rawcounts_PCC.rds") %>% as.data.frame()
+# metadata <- vroom::vroom("/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/PCC/RNA_seq_metadata_PCC.csv")
+# brain_area <- "PCC_ROSMAP"
 
 cat("# Define functions \n")
 
@@ -61,7 +61,6 @@ load_data <- function(args) {
   
   return(list(counts = counts, metadata = metadata))
 }
-
 
 #Define function to convert from ENSMBL to SYMBOL
 
@@ -152,79 +151,77 @@ preprocess_data <- function(counts, metadata, condition_column) {
   
 }
 
-counts = preprocessed_data$counts
-metadata = preprocessed_data$metadata
-condition_column = "msex"
-design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc"
+# counts = preprocessed_data$counts
+# metadata = preprocessed_data$metadata
+# condition_column = "msex"
+# design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc"
 
-
-#Run deseq
-
-run_deseq <- function(counts, metadata, condition_column, design_vars) {
-  
-  # Verificar alineamiento counts y metadata
-  if (!all(colnames(counts) %in% metadata$specimenID)) {
-    stop("Not all columns in counts have corresponding specimenIDs in metadata!")
-  }
-  
-  # Filtrar y alinear metadata
-  metadata <- metadata %>%
-    filter(specimenID %in% colnames(counts)) %>%
-    arrange(match(specimenID, colnames(counts)))
-  
-  # Extraer variables de la fórmula
-  design_formula <- as.formula(design_vars)
-  vars <- all.vars(design_formula)
-  
-  # Construir coldata alineado
-  coldata <- metadata %>%
-    select(specimenID, all_of(vars))
-  
-  # Convertir variables categóricas a factor
-  for (v in vars) {
-    if (is.character(coldata[[v]])) {
-      coldata[[v]] <- as.factor(coldata[[v]])
-    }
-  }
-  
-  # Convertir condition_column a factor (por seguridad)
-  coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
-  coldata <- droplevels(coldata)
-  
-  # Verificar niveles en condition_column
-  if (nlevels(coldata[[condition_column]]) < 2) {
-    stop(paste("Variable", condition_column, "has less than two levels."))
-  }
-  
-  # Relevel si existe "control"
-  if ("control" %in% levels(coldata[[condition_column]])) {
-    coldata[[condition_column]] <- relevel(coldata[[condition_column]], ref = "control")
-  }
-  
-  # Escalamiento RIN y PMI
-  for (var in c("RIN", "pmi")) {
-    if (var %in% vars) {
-      val_mean <- mean(coldata[[var]], na.rm = TRUE)
-      val_sd <- sd(coldata[[var]], na.rm = TRUE)
-      if (val_mean >= 5 || val_sd >= 5) {
-        message(paste("Scaling", var, "for having mean or sd > 5"))
-        coldata[[var]] <- scale(coldata[[var]])
-      }
-    }
-  }
-  
-  # Finalmente correr DESeq2
-  dds <- DESeqDataSetFromMatrix(countData = counts, 
-                                colData = coldata,
-                                design = design_formula)
-  dds <- DESeq(dds)
-  
-  return(list(dds = dds, 
-              coldata = coldata,
-              design_formula = design_formula))
-}
-
-
+# 
+# #Run deseq
+# 
+# run_deseq <- function(counts, metadata, condition_column, design_vars) {
+#   
+#   # Verificar alineamiento counts y metadata
+#   if (!all(colnames(counts) %in% metadata$specimenID)) {
+#     stop("Not all columns in counts have corresponding specimenIDs in metadata!")
+#   }
+#   
+#   # Filtrar y alinear metadata
+#   metadata <- metadata %>%
+#     filter(specimenID %in% colnames(counts)) %>%
+#     arrange(match(specimenID, colnames(counts)))
+#   
+#   # Extraer variables de la fórmula
+#   design_formula <- as.formula(design_vars)
+#   vars <- all.vars(design_formula)
+#   
+#   # Construir coldata alineado
+#   coldata <- metadata %>%
+#     select(specimenID, all_of(vars))
+#   
+#   # Convertir variables categóricas a factor
+#   for (v in vars) {
+#     if (is.character(coldata[[v]])) {
+#       coldata[[v]] <- as.factor(coldata[[v]])
+#     }
+#   }
+#   
+#   # Convertir condition_column a factor (por seguridad)
+#   coldata[[condition_column]] <- as.factor(coldata[[condition_column]])
+#   coldata <- droplevels(coldata)
+#   
+#   # Verificar niveles en condition_column
+#   if (nlevels(coldata[[condition_column]]) < 2) {
+#     stop(paste("Variable", condition_column, "has less than two levels."))
+#   }
+#   
+#   # Relevel si existe "control"
+#   if ("control" %in% levels(coldata[[condition_column]])) {
+#     coldata[[condition_column]] <- relevel(coldata[[condition_column]], ref = "control")
+#   }
+#   
+#   # Escalamiento RIN y PMI
+#   for (var in c("RIN", "pmi")) {
+#     if (var %in% vars) {
+#       val_mean <- mean(coldata[[var]], na.rm = TRUE)
+#       val_sd <- sd(coldata[[var]], na.rm = TRUE)
+#       if (val_mean >= 5 || val_sd >= 5) {
+#         message(paste("Scaling", var, "for having mean or sd > 5"))
+#         coldata[[var]] <- scale(coldata[[var]])
+#       }
+#     }
+#   }
+#   
+#   # Finalmente correr DESeq2
+#   dds <- DESeqDataSetFromMatrix(countData = counts, 
+#                                 colData = coldata,
+#                                 design = design_formula)
+#   dds <- DESeq(dds)
+#   
+#   return(list(dds = dds, 
+#               coldata = coldata,
+#               design_formula = design_formula))
+# }
 
 run_deseq <- function(counts, metadata, condition_column, design_vars) {
   #Build design formula
@@ -271,11 +268,11 @@ run_deseq <- function(counts, metadata, condition_column, design_vars) {
               coldata = coldata,
               design_formula = design_formula))
 }
-
-de_results_AD <- run_deseq(counts = preprocessed_data$counts, 
-                           metadata = preprocessed_data$metadata,
-                           condition_column = "msex", 
-                           design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc") #I'm expecting interaction between sex and condition
+# 
+# de_results_AD <- run_deseq(counts = preprocessed_data$counts, 
+#                            metadata = preprocessed_data$metadata,
+#                            condition_column = "msex", 
+#                            design_vars = "~ sequencingBatch + pmi + RIN + msex + ceradsc + msex:ceradsc") #I'm expecting interaction between sex and condition
 
 
 #Extract DEGS
