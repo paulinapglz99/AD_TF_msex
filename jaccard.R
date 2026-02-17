@@ -7,7 +7,8 @@ suppressPackageStartupMessages({
     tools,
     igraph,
     tidyverse, 
-    vroom
+    vroom, 
+    cowplot
   )
 })
 
@@ -29,10 +30,10 @@ option_list <- list(
 
 opt <- parse_args(OptionParser(option_list = option_list))
 
-opt$out_dir <- "/STORAGE/genut/alzheimer/networks_ad_sex/results_conn_comparisons"
-opt$input_dir <- "/STORAGE/genut/alzheimer/networks_ad_sex"
-opt$pattern <- "\\.txt$"
-opt$type <- "edgelist"
+# opt$out_dir <- "/STORAGE/genut/alzheimer/networks_ad_sex/results_conn_comparisons"
+# opt$input_dir <- "/STORAGE/genut/alzheimer/networks_ad_sex"
+# opt$pattern <- "\\.txt$"
+# opt$type <- "edgelist"
 
 dir.create(opt$out_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -175,16 +176,13 @@ final_table <- bind_rows(results) %>%
 
 #Save results ============================================================
 
-write_csv(final_table,
-          file.path(opt$out_dir, "jaccard_summary.csv"))
+write_csv(final_table, file.path(opt$out_dir, "jaccard_summary.csv"))
 
 print(final_table)
 
 #Plot results ============================================================
 
 #Heatmap by region × comparison (Jaccard links)
-
-library(pheatmap)
 
 plot_data <- final_table %>%
   mutate(
@@ -210,7 +208,7 @@ plot_data$comparison <- factor(
     "F-AD vs M-AD",
     "M-AD vs M-CTL"))
 
-#Plot
+#Plot edges --- ---
 
 ht_edges <- ggplot(plot_data,
        aes(x = comparison,
@@ -222,25 +220,21 @@ ht_edges <- ggplot(plot_data,
             fontface = "bold") +
   scale_fill_gradientn(
     colours = c("#B2182B", "#F7F7F7", "#2166AC"),
-    name = "Jaccard\n(enlaces)"
+    name = "Jaccard\n(edges)"
   )+
-  theme_minimal(base_size = 14) +
+  labs(
+    x = "Comparison",
+    y = "Region"
+  )+
   theme(
-    panel.grid = element_blank(),
-    axis.title = element_blank(),
-    axis.text.x = element_text(
-     # angle = 90,
-      vjust = 0.5,
-      hjust = 0.5,
-      face = "bold"
-    )
-    ,
-    axis.text.y = element_text(face = "bold"),
-    legend.position = "bottom",
-    legend.title = element_text(face = "bold"))
+  legend.position = "bottom",
+  legend.title = element_text(face = "bold", size = 14),
+  legend.text = element_text(size = 11),
+  legend.margin = margin(t = 5),
+  legend.box.margin = margin(t = -5)
+) +
+  theme_minimal(base_size = 14) 
 
-#1.cambiar gradientes
-#2.
 
 #Vis
 ht_edges
@@ -253,5 +247,68 @@ ggsave(filename = "heatmap_edges_AD_TF_msex.jpeg",
         height = 20,
         units = "cm",
         dpi = 300)
+
+#Plot nodes --- --- 
+
+ht_nodes <- ggplot(plot_data,
+                   aes(x = comparison,
+                       y = region,
+                       fill = jaccard_nodos)) +
+  geom_tile(color = "white", linewidth = 1.2) +
+  geom_text(aes(label = round(jaccard_enlaces, 3)),
+            size = 4,
+            fontface = "bold") +
+  scale_fill_gradientn(
+    colours = c("#B2182B", "#F7F7F7", "#2166AC"),
+    name = "Jaccard\n(genes)"
+  )+
+  labs(
+    x = "Comparison",
+    y = "Region"
+  )+
+theme(
+  legend.position = "bottom",
+  legend.title = element_text(face = "bold", size = 14),
+  legend.text = element_text(size = 11),
+  legend.margin = margin(t = 5),
+  legend.box.margin = margin(t = -5)
+) +
+theme_minimal(base_size = 14)
+
+#Vis
+ht_nodes
+
+#Save plot
+# ggsave(filename = "heatmap_nodes_AD_TF_msex.jpeg",
+#        plot = ht_nodes, 
+#        device = "jpg",
+#        width = 20,
+#        height = 20,
+#        units = "cm",
+#        dpi = 300)
+
+#Plot panel --- ---
+
+panel <- cowplot::plot_grid(
+  ht_edges,
+  ht_nodes,
+  labels = c("A", "B"),
+  label_size = 16,
+  label_fontface = "bold",
+  ncol = 2,
+  align = "hv"
+)
+
+#Vis
+panel
+
+#Save panel
+ggsave(filename = "panel_nodes_edges_heatmap_AD_TF_msex.jpeg",
+       plot = panel, 
+       device = "jpg",
+       width = 40,
+       height = 20,
+       units = "cm",
+       dpi = 300)
 
 #THE END
