@@ -189,7 +189,14 @@ library(pheatmap)
 plot_data <- final_table %>%
   mutate(
     comparison = str_replace_all(comparison, "_", " "),
-    region = str_replace_all(region, "_", " "))
+    region = str_replace_all(region, "_", " ")) 
+
+plot_data <- plot_data %>%
+  mutate(
+    comparison = case_when(
+      comparison == "female AD vs female control" ~ "F-AD vs F-CTL",
+      comparison == "female AD vs male AD"        ~ "F-AD vs M-AD",
+      comparison == "male AD vs male control"     ~ "M-AD vs M-CTL"))
 
 plot_data$region <- factor(
   plot_data$region,
@@ -199,11 +206,9 @@ plot_data$region <- factor(
 plot_data$comparison <- factor(
   plot_data$comparison,
   levels = c(
-    "female AD vs female control",
-    "female AD vs male AD",
-    "male AD vs male control"
-  )
-)
+    "F-AD vs F-CTL",
+    "F-AD vs M-AD",
+    "M-AD vs M-CTL"))
 
 #Plot
 
@@ -211,46 +216,42 @@ ht_edges <- ggplot(plot_data,
        aes(x = comparison,
            y = region,
            fill = jaccard_enlaces)) +
-  
   geom_tile(color = "white", linewidth = 1.2) +
-  
   geom_text(aes(label = round(jaccard_enlaces, 3)),
             size = 4,
             fontface = "bold") +
-  
   scale_fill_gradientn(
-    colours = c("#2166AC", "#F7F7F7", "#B2182B"),
+    colours = c("#B2182B", "#F7F7F7", "#2166AC"),
     name = "Jaccard\n(enlaces)"
-  ) +
-  
+  )+
   theme_minimal(base_size = 14) +
-  
   theme(
     panel.grid = element_blank(),
     axis.title = element_blank(),
-    axis.text.x = element_text(angle = 0,
-                               hjust = 0.5,
-                               face = "bold"),
+    axis.text.x = element_text(
+     # angle = 90,
+      vjust = 0.5,
+      hjust = 0.5,
+      face = "bold"
+    )
+    ,
     axis.text.y = element_text(face = "bold"),
     legend.position = "bottom",
-    legend.title = element_text(face = "bold")
-  )
+    legend.title = element_text(face = "bold"))
 
+#1.cambiar gradientes
+#2.
 
 #Vis
 ht_edges
 
-ggasave(filename = "heatmap_edges_AD_TF_msex.jpeg",
+#Save plot
+ggsave(filename = "heatmap_edges_AD_TF_msex.jpeg",
         plot = ht_edges, 
-        device = default_device(filename),
-        path = NULL,
-        scale = 1, 
-        width = par("din")[1],
-        height = par("din")[2],
-        units = c("in", "cm", "mm"),
+        device = "jpg",
+        width = 20,
+        height = 20,
+        units = "cm",
         dpi = 300)
-
-
-
 
 #THE END
