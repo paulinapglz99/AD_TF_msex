@@ -218,9 +218,10 @@ ht_edges <- ggplot(plot_data,
   geom_text(aes(label = round(jaccard_enlaces, 3)),
             size = 4,
             fontface = "bold") +
-  scale_fill_gradientn(
-    colours = c("#B2182B", "#F7F7F7", "#2166AC"),
-    name = "Jaccard\n(edges)"
+  scale_fill_gradient(
+    low = "#F0F6FF",
+    high = "#08306B",
+    name = "Jaccard\n(Edges)"
   )+
   labs(
     x = "Comparison",
@@ -258,10 +259,15 @@ ht_nodes <- ggplot(plot_data,
   geom_text(aes(label = round(jaccard_enlaces, 3)),
             size = 4,
             fontface = "bold") +
-  scale_fill_gradientn(
-    colours = c("#B2182B", "#F7F7F7", "#2166AC"),
-    name = "Jaccard\n(genes)"
-  )+
+  # scale_fill_gradientn(
+  #   colours = c("#B2182B", "#F7F7F7", "#2166AC"),
+  #   name = "Jaccard\n(genes)"
+  # )+
+  scale_fill_gradient(
+    low = "#E8F5E9",
+    high = "#1B5E20",
+    name = "Jaccard\n(Nodes)"
+  ) +
   labs(
     x = "Comparison",
     y = "Region"
@@ -279,13 +285,13 @@ theme_minimal(base_size = 14)
 ht_nodes
 
 #Save plot
-# ggsave(filename = "heatmap_nodes_AD_TF_msex.jpeg",
-#        plot = ht_nodes, 
-#        device = "jpg",
-#        width = 20,
-#        height = 20,
-#        units = "cm",
-#        dpi = 300)
+ggsave(filename = "heatmap_nodes_AD_TF_msex.jpeg",
+       plot = ht_nodes,
+       device = "jpg",
+       width = 20,
+       height = 20,
+       units = "cm",
+       dpi = 300)
 
 #Plot panel --- ---
 

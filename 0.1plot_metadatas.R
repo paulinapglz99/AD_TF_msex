@@ -23,6 +23,7 @@ summarize_by_tissue <- function(metadata, tissue_name) {
 
 ##################################### ROSMAP ##################################### 
 
+setwd("/STORAGE/genut/alzheimer/data_by_counts/metadata/")
 #Read metadata --- ---
 
 metadata_ROSMAP <- vroom::vroom(file = '/STORAGE/genut/alzheimer/data_by_counts/metadata/RNAseq_Harmonization_ROSMAP_combined_metadata.csv')
@@ -66,6 +67,13 @@ counts <- metadata_ROSMAP %>%
   group_by(ceradsc) %>%
   summarise(n = n())
 
+#print
+
+print(counts)
+counts
+
+#Post mortem intervals
+
 pmi_rosmap.p <- ggplot(metadata_ROSMAP, aes(x = factor(ceradsc), y = pmi, fill = factor(ceradsc))) +
   geom_violin(trim = FALSE, color = "black", alpha = 0.7) +
   geom_boxplot(width = 0.1, outlier.size = 0.5, color = "black") +
@@ -98,10 +106,12 @@ rin_rosmap.p <- ggplot(metadata_ROSMAP, aes(x = factor(ceradsc), y = RIN, fill =
 
 #Grid violins
 title_rosmap <- ggdraw() + draw_label("ROSMAP- metadata", fontface='bold')
-grid_rosmap <- cowplot::plot_grid(pmi_rosmap.p, age_d_rosmap.p, rin_rosmap.p, ncol = 3, labels = c("a", "b", "c"))
+grid_rosmap <- cowplot::plot_grid(pmi_rosmap.p, age_d_rosmap.p, rin_rosmap.p, ncol = 3, labels = c("A", "B", "C"))
 grid_rosmap <- plot_grid(title_rosmap, grid_rosmap, 
                        ncol = 1, 
                        rel_heights = c(0.1, 1))
+
+#Save metadata plots
 
 ggsave("grid_metadatas_rosmap.jpeg",
        grid_rosmap,
@@ -117,6 +127,7 @@ RINvsPMI_rosmap.p <- ggplot(metadata_ROSMAP, aes(x = RIN, y = pmi)) +
   ylab("PMI") +
   theme_minimal()
 
+#Save plot
 ggsave("RINvsPMI_rosmap.jpeg", 
        RINvsPMI_rosmap.p,
        device = "jpeg")
@@ -186,6 +197,35 @@ for (var in categorical_rosmap) {
   covariates <- rbind(covariates, data.frame(Variable = var, Test = "Chi-square", p_value = chisq_result$p.value))
 }
 
+#Plot covariates
+
+covariates_df <- covariates %>%
+  mutate(log10_p = -log10(p_value),
+         Significant = p_value < 0.05)
+
+#Print data
+
+print(covariates_df)
+
+covariates.p <- ggplot(covariates_df,
+       aes(x = log10_p,
+           y = reorder(Variable, log10_p),
+           color = Test,
+           shape = Significant)) +
+  geom_point(size = 4) +
+  geom_vline(xintercept = -log10(0.05),
+             linetype = "dashed") +
+  theme_minimal() +
+  labs(x = expression(-log[10](p)),
+       y = "Covariate",
+       color = "Test",
+       shape = "p < 0.05")
+
+#Save plot
+ggsave("covariates_ROSMAP.jpeg", 
+       covariates.p,
+       device = "jpeg")
+
 #See expression 
 
 counts_ROSMAP1 <- readRDS(file = '/STORAGE/genut/alzheimer/data_by_counts/ROSMAP_counts/data/ROSMAP_RNAseq_rawcounts_DLPFC.rds')%>% 
@@ -223,6 +263,8 @@ XIST_UTY.p  <-ggplot(XIST_UTY, aes(x = log(UTY), y = log(XIST), color = as.facto
   labs(title = "Expression of XIST and UTY - ROSMAP",
        x = "XIST",
        y = "UTY")
+
+#Save XIST_UTY plot
 
 ggsave("XIST_UTY_rosmap.jpeg", 
        XIST_UTY.p,
@@ -296,6 +338,11 @@ summary_PCC <- metadata_ROSMAP_PCC %>%
     APOE = paste(paste0("APOE", names(table(apoe_genotype)), ": ", as.numeric(table(apoe_genotype))), collapse = ", ")) %>% 
   ungroup()
 
+#Save plots
+
+
+
+
 ##################################### Mayo Clinic ##################################### 
 
 metadata_Mayo <- vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/metadata/RNAseq_Harmonization_Mayo_combined_metadata.csv")
@@ -351,6 +398,7 @@ grid_mayo <- plot_grid(title_Mayo, grid_mayo,
           ncol = 1, 
           rel_heights = c(0.1, 1))  
 
+#Save
 ggsave("grid_metadata_mayo.jpeg", 
        grid_mayo,
        device = "jpeg")
@@ -364,6 +412,7 @@ RINvsPMI_mayo.p <- ggplot(metadata_Mayo, aes(x = RIN, y = pmi)) +
   ylab("PMI") +
   theme_minimal()
 
+#Save
 ggsave("RINvsPMI_mayo.jpeg", 
        RINvsPMI_mayo.p,
        device = "jpeg")
@@ -432,6 +481,38 @@ for (var in categorical_mayo) {
   covariates_mayo <- rbind(covariates_mayo, data.frame(Variable = var, Test = "Chi-square", p_value = chisq_result$p.value))
 }
 
+# Transformación para visualización
+covariates_mayo_df <- covariates_mayo %>%
+  mutate(
+    log10_p = -log10(p_value),
+    Significant = p_value < 0.05
+  )
+
+print(covariates_mayo_df)
+
+covariates_mayo.p <- ggplot(
+  covariates_mayo_df,
+  aes(
+    x = log10_p,
+    y = reorder(Variable, log10_p),
+    color = Test,
+    shape = Significant
+  )
+) +
+  geom_point(size = 4) +
+  geom_vline(
+    xintercept = -log10(0.05),
+    linetype = "dashed"
+  ) +
+  theme_minimal() +
+  labs(
+    x = expression(-log[10](p)),
+    y = "Covariate",
+    color = "Test",
+    shape = "p < 0.05"
+  )
+
+
 #See expression 
 
 counts_Mayo <-  vroom::vroom(file = "/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/Mayo_gene_all_counts_matrix_clean.txt")
@@ -495,6 +576,145 @@ summary_mayo_TC <- metadata_Mayo_TC %>%
     APOE = paste(paste0("APOE", names(table(apoeGenotype)), ": ", as.numeric(table(apoeGenotype))), collapse = ", ")
   ) 
 
+#Final panel
 
+library(cowplot)
+
+###############################ROSMAP##########################
+rosmap_row1 <- plot_grid(
+  pmi_rosmap.p,
+  age_d_rosmap.p,
+  rin_rosmap.p,
+  ncol = 3,
+  labels = c("A", "B", "C"),
+  label_size = 14
+)
+
+rosmap_row2 <- plot_grid(
+  RINvsPMI_rosmap.p,
+  XIST_UTY.p,
+  ncol = 2,
+  labels = c("D", "E"),
+  label_size = 14
+)
+
+rosmap_row3 <- plot_grid(
+  covariates.p,
+  ncol = 1,
+  labels = "F",
+  label_size = 14
+)
+
+title_rosmap <- ggdraw() +
+  draw_label("ROSMAP Cohort",
+             fontface = "bold",
+             size = 18)
+
+panel_rosmap <- plot_grid(
+  title_rosmap,
+  rosmap_row1,
+  rosmap_row2,
+  rosmap_row3,
+  ncol = 1,
+  rel_heights = c(0.08, 1, 1, 0.8)
+)
+
+title_rosmap <- ggdraw() +
+  draw_label("ROSMAP Cohort",
+             fontface = "bold",
+             size = 18)
+
+panel_rosmap <- plot_grid(
+  title_rosmap,
+  rosmap_row1,
+  rosmap_row2,
+  rosmap_row3,
+  ncol = 1,
+  rel_heights = c(0.08, 1, 1, 0.8)
+)
+
+#Vis panel ROSMAP
+
+ggsave("panel_rosmap.jpeg", 
+       panel_rosmap,
+       device = "jpeg", 
+       width = 10, 
+       height = 10, 
+       dpi = 300)
+
+###############################Mayo##########################
+
+mayo_row1 <- plot_grid(
+  pmi_mayo.p,
+  age_d_mayo.p,
+  rin_mayo.p,
+  ncol = 3,
+  labels = c("G", "H", "I"),
+  label_size = 14
+)
+
+mayo_row2 <- plot_grid(
+  RINvsPMI_mayo.p,
+  XIST_UTY_mayo.p,
+  ncol = 2,
+  labels = c("J", "K"),
+  label_size = 14
+)
+title_mayo <- ggdraw() +
+  draw_label("Mayo Cohort",
+             fontface = "bold",
+             size = 18)
+
+mayo_row3 <- plot_grid(
+  covariates_mayo.p,
+  ncol = 1,
+  labels = "L",
+  label_size = 14
+)
+
+panel_mayo <- plot_grid(
+  title_mayo,
+  mayo_row1,
+  mayo_row2,
+  mayo_row3,
+  ncol = 1,
+  rel_heights = c(0.08, 1, 1, 0.8)
+)
+
+title_mayo <- ggdraw() +
+  draw_label("Mayo Cohort",
+             fontface = "bold",
+             size = 18)
+
+#Save Mayo panel
+ggsave("panel_mayo.jpeg", 
+       panel_mayo,
+       device = "jpeg", 
+       width = 10, 
+       height = 10, 
+       dpi = 300)
+
+panel_global <- plot_grid(
+  panel_rosmap,
+  panel_mayo,
+  ncol = 2,
+  rel_heights = c(1.2, 1)
+)
+
+#Save global panel 
+ggsave("panel_global.jpeg", 
+       panel_global,
+       device = "jpeg", 
+       width = 20, 
+       height = 15, 
+       dpi = 300)
+
+#pdf also
+ggsave("panel_global.pdf", 
+       panel_global,
+       device = "pdf", 
+       width = 20, 
+       height = 18, 
+       dpi = 300)
 
 #END
