@@ -1,16 +1,16 @@
 #!/usr/bin/env Rscript
 
-suppressPackageStartupMessages({
-  library(optparse)
-  library(data.table)
-  library(dplyr)
-  library(stringr)
-  library(purrr)
-})
+#Libraries
+pacman::p_load("optparse", 
+               "data.table", 
+               "dplyr", 
+               "stringr", 
+               "purrr", 
+               "ggplot2", 
+               "cowplot", 
+               "ggsci")
 
-# ============================================================
-# ARGUMENT PARSER
-# ============================================================
+#Parser
 
 option_list <- list(
   make_option(c("-i", "--input_dir"), type = "character",
@@ -53,9 +53,16 @@ cat("Upper threshold:", opt$upper, "\n")
 cat("Lower threshold:", opt$lower, "\n")
 cat("Min genes:", opt$min_genes, "\n")
 
-# ============================================================
-# FILENAME PARSER
-# ============================================================
+#Functions --- ---
+
+#Jaccard 
+jaccard_index <- function(a, b) {
+  if (length(a) == 0 && length(b) == 0) return(1)
+  if (length(a) == 0 || length(b) == 0) return(0)
+  length(intersect(a, b)) / length(union(a, b))
+}
+
+#Filename parser to extract metadata
 
 parse_filename <- function(filepath) {
   
@@ -86,7 +93,7 @@ parse_filename <- function(filepath) {
   )
 }
 
-#LOAD FILES ============================================================
+#Get files
 
 files <- list.files(
   opt$input_dir,
@@ -100,7 +107,7 @@ if (length(files) == 0) {
 
 meta <- map_dfr(files, parse_filename)
 
-#LOAD MODULES  ============================================================
+#Get module data
 
 load_modules <- function(file, region, sex, phenotype) {
   
@@ -129,15 +136,7 @@ for (i in seq_len(nrow(meta))) {
   modules_list <- c(modules_list, mods)
 }
 
-#JACCARD FUNCTION ============================================================
-
-jaccard_index <- function(a, b) {
-  if (length(a) == 0 && length(b) == 0) return(1)
-  if (length(a) == 0 || length(b) == 0) return(0)
-  length(intersect(a, b)) / length(union(a, b))
-}
-
-#PAIRWISE JACCARD (WITHIN REGION) ============================================================
+#Pairwise Jaccard
 
 regions <- unique(meta$region)
 jaccard_results <- list()
@@ -185,7 +184,7 @@ jaccard_df <- bind_rows(jaccard_results)
 
 vroom::vroom_write(jaccard_df, file.path(opt$out_dir, "jaccard_all_pairs.csv"))
 
-#STRUCTURAL EXCLUSIVITY ============================================================
+#Structural exclusivity
 
 exclusive_list <- list()
 
@@ -216,7 +215,7 @@ exclusive_df <- bind_rows(exclusive_list)
 
 vroom::vroom_write(exclusive_df, file.path(opt$out_dir, "exclusive_modules.csv"))
 
-#SUMMARY ============================================================
+#Summary 
 
 summary_df <- exclusive_df %>%
   mutate(
@@ -274,15 +273,7 @@ for (reg in regions) {
 
 module_class_df <- bind_rows(module_class_list)
 
-
-#Plot data ============================================================
-my_colors <- c(
-  "Exclusive" = "#B2182B",      # rojo vino profundo
-  "Intermediate" = "#F4A582",   # coral suave
-  "Similar" = "#2166AC"         # azul profundo
-)
-
-# --- Clean metadata from Module
+#Clean metadata from Module
 module_class_df <- module_class_df %>%
   mutate(
     parts = str_split(Module, "_"),
@@ -292,26 +283,47 @@ module_class_df <- module_class_df %>%
   ) %>%
   select(-parts)
 
-# --- LOCAL proportions (Region × Sex × Phenotype)
-plot_df <- module_class_df %>%
+#Module size dataframe
+
+module_size_df <- tibble(
+  Module = names(modules_list),
+  N_genes = map_int(modules_list, length)
+) %>%
+  mutate(
+    parts = str_split(Module, "_"),
+    Region = map_chr(parts, 1),
+    Sex = map_chr(parts, 2),
+    Phenotype = map_chr(parts, 3)
+  ) %>%
+  select(-parts)
+
+#Plot data ============================================================
+
+#Plot LOCAL proportions (Region - Sex - Phenotype)
+
+proportions.df <- module_class_df %>%
   group_by(Region, Sex, Phenotype, Classification) %>%
   summarise(N = n(), .groups = "drop") %>%
   group_by(Region, Sex, Phenotype) %>%
   mutate(Percentage = N / sum(N))
 
-library(ggplot2)
-proportions.p <- ggplot(plot_df,
+
+proportions.p <- ggplot(proportions.df,
                         aes(x = Region,
                             y = Percentage,
                             fill = Classification)) +
   geom_bar(stat = "identity", position = "fill") +
   facet_grid(Sex ~ Phenotype) +
-  scale_fill_manual(values = my_colors) +
+  scale_fill_aaas(name = "Module classification") +
   scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_classic() +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)
+    #axis.text.x = element_text(angle = 45, hjust = 1), 
+    axis.title = element_blank(),
+    legend.position = "none"
   )
+
+#Save plot
 
 ggsave("proportions_barplot.pdf",
        plot = proportions.p,
@@ -325,25 +337,25 @@ ggsave("proportions_barplot.jpg",
        height = 10,
        dpi = 300)
 
-# ============================================================
-# GLOBAL proportions (Region × Sex)
-# ============================================================
+#Plot GLOBAL proportions (Region - Sex)
 
-global_df <- module_class_df %>%
+global.df <- module_class_df %>%
   group_by(Region, Sex, Classification) %>%
   summarise(N = n(), .groups = "drop") %>%
   group_by(Region, Sex) %>%
   mutate(Percentage = N / sum(N))
 
-global_df$Classification <- factor(global_df$Classification,
+#Set factors
+
+global.df$Classification <- factor(global.df$Classification,
                                    levels = c("Exclusive",
                                               "Intermediate",
                                               "Similar"))
 
-global_df$Sex <- factor(global_df$Sex,
+global.df$Sex <- factor(global.df$Sex,
                         levels = c("F", "M"))
 
-global.p <- ggplot(global_df,
+global.p <- ggplot(global.df,
                    aes(x = Region,
                        y = Percentage,
                        fill = Classification)) +
@@ -351,16 +363,19 @@ global.p <- ggplot(global_df,
            position = "fill",
            width = 0.8) +
   facet_wrap(~ Sex, nrow = 1) +
-  scale_fill_manual(values = my_colors) +
+  scale_fill_aaas(name = "Classification  ") +
   scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
-  labs(y = "% of modules",
-       x = NULL) +
+  labs(y = element_blank()) +
+  theme_classic(base_size = 14) +
   theme(
     strip.background = element_rect(fill = "white", colour = "black", linewidth = 0.8),
     strip.text = element_text(face = "bold"),
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  ) +
-  theme_classic(base_size = 14)
+    axis.text.x = element_text(angle = 45, hjust = 1), 
+    #axis.title = "Region",
+    legend.title = element_text(size = 12),
+    legend.position = "bottom")
+
+#Save plots
 
 ggsave("proportions_global_barplot.pdf",
        plot = global.p,
@@ -374,47 +389,103 @@ ggsave("proportions_global_barplot.jpg",
        height = 10,
        dpi = 300)
 
-
-library(cowplot)
-
-# Quitar leyenda del segundo plot para evitar duplicados
-global.p <- global.p + theme(legend.position = "none")
-
-# Extraer leyenda del primero
-legend <- get_legend(
-  proportions.p + theme(legend.position = "bottom")
-)
-
-# Quitar leyenda del plot principal
-proportions.p <- proportions.p + theme(legend.position = "none")
-
-# Combinar paneles
+#Build panel
 panel_combined <- plot_grid(
   proportions.p,
   global.p,
   labels = c("A", "B"),
   ncol = 1,
-  rel_heights = c(1.2, 0.8)
-)
+  rel_heights = c(1.2, 0.8))
 
-# Añadir leyenda abajo
-final_panel <- plot_grid(
-  panel_combined,
-  legend,
-  ncol = 1,
-  rel_heights = c(1, 0.1)
-)
-
-# Guardar figura final
-ggsave("Figure_Modular_Reorganization_Sex_AD_PANEL.pdf",
-       final_panel,
-       width = 10,
-       height = 14,
-       dpi = 300)
+#Save panel
 
 ggsave("Figure_Modular_Reorganization_Sex_AD_PANEL.jpg",
-       final_panel,
+       panel_combined,
        width = 10,
        height = 14,
        dpi = 300)
 
+ggsave("Figure_Modular_Reorganization_Sex_AD_PANEL.pdf",
+       panel_combined,
+       width = 10,
+       height = 14,
+       dpi = 300)
+
+#Plot module size 
+
+module_size_hist <- ggplot(module_size_df,
+                           aes(x = N_genes)) +
+  geom_histogram(binwidth = 120,
+                 color = "black",
+                 fill = "#3B4992FF") +
+  theme_classic(base_size = 14) +
+  labs(x = element_blank(),
+       y = "Count")
+
+#Save plot
+
+ggsave("module_size_distribution_hist.jpg",
+       module_size_hist,
+       width = 8,
+       height = 8,
+       dpi = 300)
+
+ggsave("module_size_distribution_hist.pdf",
+       module_size_hist,
+       width = 8,
+       height = 8,
+       dpi = 300)
+
+#Module size per sex
+
+module_size_sex <- ggplot(module_size_df,
+                          aes(x = N_genes,
+                              fill = Sex)) +
+  geom_histogram(binwidth = 100,
+                 color = "black",
+                 alpha = 0.9,
+                 position = "identity") +
+  scale_fill_aaas() +
+  facet_wrap(~ Sex) +
+  theme_classic(base_size = 14) +
+  labs(x = "Module size",
+       y = "Count") +
+  theme(legend.position = "bottom")
+
+#Save plot
+
+ggsave("module_size_distribution_hist_sex.jpg",
+       module_size_sex,
+       width = 13,
+       height = 10,
+       dpi = 300)
+
+ggsave("module_size_distribution_hist_sex.pdf",
+       module_size_sex,
+       width = 13,
+       height = 10,
+       dpi = 300)
+
+#Panel de module size
+
+module_size_panel <- plot_grid(
+  module_size_hist,
+  module_size_sex,
+  labels = c("A", "B"),
+  ncol = 1)
+
+#Save panel
+
+ggsave("module_size_distribution_panel.jpg",
+       module_size_panel,
+       width = 8,
+       height = 10,
+       dpi = 300)
+
+ggsave("module_size_distribution_panel.pdf",
+       module_size_panel,
+       width = 8,
+       height = 10,
+       dpi = 300)
+
+#END
