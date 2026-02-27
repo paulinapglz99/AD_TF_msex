@@ -297,6 +297,46 @@ module_size_df <- tibble(
   ) %>%
   select(-parts)
 
+#Check normalidad 
+#Test Shapiro-Wilk
+
+#The Shapiro–Wilk test evaluates:
+#H0 (null hypothesis): the data follow a normal distribution
+#H1: the data do NOT follow a normal distributionl
+
+#Within each sex, does the distribution of module size follow a normal distribution?
+by(module_size_df$N_genes,
+   module_size_df$Sex,
+   shapiro.test)
+
+# module_size_df$Sex: F
+# 
+# Shapiro-Wilk normality test
+# 
+# data:  dd[x, ]
+# W = 0.91656, p-value = 2.168e-06
+# 
+# --------------------------------------------------------------------------------------------------------------- 
+#   module_size_df$Sex: M
+# 
+# Shapiro-Wilk normality test
+# 
+# data:  dd[x, ]
+# W = 0.95153, p-value = 0.001048
+
+#Similar shapes, different centers
+
+wilcox.test(N_genes ~ Sex,
+            data = module_size_df)
+
+# Wilcoxon rank sum test with continuity correction
+# 
+# data:  N_genes by Sex
+# W = 5132.5, p-value = 0.1453
+# alternative hypothesis: true location shift is not equal to 0
+
+#No statistical evidence that the size of the modules differs between men and women.
+
 #Plot data ============================================================
 
 #Plot LOCAL proportions (Region - Sex - Phenotype)
