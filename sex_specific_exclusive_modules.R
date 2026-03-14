@@ -230,7 +230,7 @@ summary_df <- exclusive_df %>%
 
 #Save data
 
-vroom::vroom_write(summary_df, file.path(opt$out_dir, "exclusive_summary.csv"))
+#vroom::vroom_write(summary_df, file.path(opt$out_dir, "exclusive_summary.csv"))
 
 #BUILD COMPLETE MODULE CLASSIFICATION ============================================================
 
@@ -337,6 +337,28 @@ wilcox.test(N_genes ~ Sex,
 
 #No statistical evidence that the size of the modules differs between men and women.
 
+#Do the men’s and women’s sections vary in size within each region?
+module_size_region_test <- module_size_df %>%
+  group_by(Region) %>%
+  summarise(
+    p_value = wilcox.test(N_genes ~ Sex)$p.value
+  )
+
+module_size_region_test$p_adj <- p.adjust(
+  module_size_region_test$p_value,
+  method = "BH"
+)
+# 
+# Region p_value p_adj
+# <chr>    <dbl> <dbl>
+#   1 CRB      0.522 0.653
+# 2 DLPFC    0.427 0.653
+# 3 HCN      0.232 0.653
+# 4 PCC      0.933 0.933
+# 5 TC       0.392 0.653
+
+module_size_region_test
+
 #Plot data ============================================================
 
 #Plot LOCAL proportions (Region - Sex - Phenotype)
@@ -358,7 +380,7 @@ proportions.p <- ggplot(proportions.df,
   scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
   theme_classic() +
   theme(
-    #axis.text.x = element_text(angle = 45, hjust = 1), 
+    axis.text.x = element_text(angle = 45, hjust = 1), 
     axis.title = element_blank(),
     legend.position = "none"
   )
@@ -452,6 +474,7 @@ ggsave("Figure_Modular_Reorganization_Sex_AD_PANEL.pdf",
        dpi = 300)
 
 #Plot module size 
+#Si usas conteos, el histograma estará dominado por el grupo que tenga más módulos.
 
 module_size_hist <- ggplot(module_size_df,
                            aes(x = N_genes)) +
@@ -528,4 +551,402 @@ ggsave("module_size_distribution_panel.pdf",
        height = 10,
        dpi = 300)
 
-#END
+#Si usas conteos, el histograma estará dominado por el grupo que tenga más módulos, entonces
+#Para comparar distribuciones entre grupos con tamaños distintos, es mejor usar probability density o proportion
+#¿Cuál es la probabilidad de observar un módulo de tamaño X?
+#Plot module size (probability)
+
+prob_module_size_hist <- ggplot(module_size_df,
+                           aes(x = N_genes,
+                               y = after_stat(density))) +
+  geom_histogram(binwidth = 120,
+                 color = "black",
+                 fill = "#3B4992FF") +
+  theme_classic(base_size = 14) +
+  labs(x = "Module size",
+       y = "Probability density")
+
+#Save plot
+
+ggsave("prob_module_size_distribution_hist.jpg",
+       prob_module_size_hist,
+       width = 8,
+       height = 8,
+       dpi = 300)
+
+ggsave("prob_module_size_distribution_hist.pdf",
+       prob_module_size_hist,
+       width = 8,
+       height = 8,
+       dpi = 300)
+
+#Module size per sex (probability)
+
+prob_module_size_sex <- ggplot(module_size_df,
+                          aes(x = N_genes,
+                              y = after_stat(density),
+                              fill = Sex)) +
+  geom_histogram(binwidth = 100,
+                 color = "black",
+                 alpha = 0.9,
+                 position = "identity") +
+  scale_fill_aaas() +
+  facet_wrap(~ Sex) +
+  theme_classic(base_size = 14) +
+  labs(x = "Module size",
+       y = "Probability density") +
+  theme(legend.position = "bottom")
+
+#Save plot
+
+ggsave("prob_module_size_distribution_hist_sex.jpg",
+       prob_module_size_sex,
+       width = 13,
+       height = 10,
+       dpi = 300)
+
+ggsave("prob_module_size_distribution_hist_sex.pdf",
+       prob_module_size_sex,
+       width = 13,
+       height = 10,
+       dpi = 300)
+
+#Panel de module size
+
+prob_module_size_panel <- plot_grid(
+  module_size_hist,
+  module_size_sex,
+  labels = c("A", "B"),
+  ncol = 1)
+
+#Save panel
+
+ggsave("prob_module_size_distribution_panel.jpg",
+       prob_module_size_panel,
+       width = 9,
+       height = 11,
+       dpi = 300)
+
+ggsave("prob_module_size_distribution_panel.pdf",
+       prob_module_size_panel,
+       width = 9,
+       height = 11,
+       dpi = 300)
+
+#And by region?
+
+module_size_sex_region <- ggplot(module_size_df,
+                                 aes(x = N_genes,
+                                     y = after_stat(density),
+                                     fill = Sex)) +
+  geom_histogram(binwidth = 100,
+                 color = "black",
+                 alpha = 0.8,
+                 position = "identity") +
+  scale_fill_aaas() +
+  facet_grid(Sex ~ Region) +
+  theme_classic(base_size = 14) +
+  labs(x = "Module size (genes)",
+       y = "Probability density") +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "black"),
+    strip.text = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+ggsave("module_size_distribution_sex_region.jpg",
+       module_size_sex_region,
+       width = 16,
+       height = 10,
+       dpi = 300)
+
+ggsave("module_size_distribution_sex_region.pdf",
+       module_size_sex_region,
+       width = 16,
+       height = 10,
+       dpi = 300)
+
+#Diferent
+module_size_region_test <- module_size_region_test %>%
+  mutate(label = paste0("p adj= ", signif(p_adj, 2))) %>%
+  left_join(label_positions, by = "Region")
+
+label_positions <- module_size_df %>%
+  group_by(Region) %>%
+  summarise(
+    x = 2000,
+    y = 0.00035   # altura fija en la densidad
+  )
+
+module_size_region_test <- left_join(module_size_region_test,
+                                     label_positions,
+                                     by = "Region")
+
+module_size_sex_region2 <- ggplot(module_size_df,
+                                  aes(x = N_genes,
+                                      y = after_stat(density),
+                                      fill = Sex)) +
+  geom_density(color = "black",
+               alpha = 0.7) +
+  scale_fill_aaas() +
+  facet_wrap(~ Region, nrow = 5) +
+  geom_text(data = module_size_region_test,
+            aes(x = x,
+                y = y,
+                label = label),
+            inherit.aes = FALSE,
+            hjust = 0,
+            vjust = 1.5,
+            size = 4) +
+  theme_classic(base_size = 14) +
+  labs(x = "Module size (genes)",
+       y = "Probability density") +
+  theme(legend.position = "bottom")
+
+#Save plots
+
+ggsave("2-module_size_distribution_sex_region.jpg",
+       module_size_sex_region2,
+       width = 5,
+       height = 16,
+       dpi = 300)
+
+ggsave("2-module_size_distribution_sex_region.pdf",
+       module_size_sex_region2,
+       width = 5,
+       height = 16,
+       dpi = 300)
+
+#Panel
+
+panel2 <- plot_grid(
+  module_size_sex_region2,
+  global.p,
+    labels = c("A", "B"),
+    ncol = 2)
+
+#Save panel
+
+ggsave("panel2.jpg",
+       panel2,
+       width = 9,
+       height = 10,
+       dpi = 300)
+
+ggsave("panel2.pdf",
+       panel2,
+       width = 9,
+       height = 10,
+       dpi = 300)
+
+#Condenado heatmap --- ---
+
+jaccard_df <- jaccard_df %>%
+  mutate(
+    sex1 = str_extract(Module_1, "_[MF]_") %>% str_remove_all("_"),
+    sex2 = str_extract(Module_2, "_[MF]_") %>% str_remove_all("_"),
+    
+    pheno1 = str_extract(Module_1, "_(AD|CTL)_") %>% str_remove_all("_"),
+    pheno2 = str_extract(Module_2, "_(AD|CTL)_") %>% str_remove_all("_"),
+    
+    group1 = paste0(sex1, pheno1),
+    group2 = paste0(sex2, pheno2)
+  )
+
+plot_heatmap <- function(df, title) {
+  
+  ggplot(df, aes(Module_1, Module_2, fill = Jaccard)) +
+    
+    geom_tile(color = "grey90") +
+    
+    scale_fill_gradient2(
+      low = "#2166AC",
+      mid = "white",
+      high = "#B2182B",
+      midpoint = 0.5,
+      limits = c(0,1),
+      name = "Jaccard"
+    ) +
+    
+    theme_minimal() +
+    
+    theme(
+      axis.text.x = element_text(angle = 90, hjust = 1, size = 6),
+      axis.text.y = element_text(size = 6),
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 9)
+    ) +
+    
+    labs(
+      title = title,
+      x = NULL,
+      y = NULL
+    )
+}
+
+make_region_plots <- function(df, label) {
+  
+  regions <- unique(df$Region)
+  
+  plots <- lapply(regions, function(r) {
+    
+    pdat <- df %>% filter(Region == r)
+    
+    plot_heatmap(pdat, r)
+    
+  })
+  
+  names(plots) <- regions
+  plots
+}
+
+plots_mc_mad  <- make_region_plots(mc_vs_mad, "MC vs MAD")
+plots_fc_fad  <- make_region_plots(fc_vs_fad, "FC vs FAD")
+plots_mad_fad <- make_region_plots(mad_vs_fad, "MAD vs FAD")
+
+
+library(cowplot)
+
+row1 <- plot_grid(plotlist = plots_mc_mad, nrow = 1)
+row2 <- plot_grid(plotlist = plots_fc_fad, nrow = 1)
+row3 <- plot_grid(plotlist = plots_mad_fad, nrow = 1)
+
+panel <- plot_grid(
+  row1,
+  row2,
+  row3,
+  ncol = 1,
+  labels = c("MC vs MAD", "FC vs FAD", "MAD vs FAD"),
+  label_size = 14
+)
+
+ggsave(
+  "module_overlap_panel.png",
+  panel,
+  width = 14,
+  height = 10
+)
+
+###################################
+
+
+library(dplyr)
+library(ggplot2)
+
+# ---- 1. Añadir etiqueta de comparación ----
+
+mc_vs_mad$Comparison  <- "MC_vs_MAD"
+fc_vs_fad$Comparison  <- "FC_vs_FAD"
+mad_vs_fad$Comparison <- "MAD_vs_FAD"
+
+# ---- 2. Unir todos los resultados ----
+
+all_df <- bind_rows(
+  mc_vs_mad,
+  fc_vs_fad,
+  mad_vs_fad
+)
+
+# ---- 3. Crear etiquetas únicas para cada eje ----
+
+all_df <- all_df %>%
+  mutate(
+    x_id = paste(Comparison, Region, Module_1, sep = "_"),
+    y_id = paste(Comparison, Region, Module_2, sep = "_")
+  )
+
+# ---- 4. Ordenar para que los bloques queden agrupados ----
+
+all_df <- all_df %>%
+  arrange(Comparison, Region)
+
+# ---- 5. Convertir a factor para fijar orden en el heatmap ----
+
+all_df$x_id <- factor(all_df$x_id, levels = unique(all_df$x_id))
+all_df$y_id <- factor(all_df$y_id, levels = unique(all_df$y_id))
+
+# ---- 6. Calcular posiciones de separación entre bloques ----
+
+block_sizes <- all_df %>%
+  group_by(Comparison, Region) %>%
+  summarise(n = n_distinct(x_id), .groups="drop")
+
+block_lines <- cumsum(block_sizes$n)
+
+# ---- 7. Dibujar heatmap global ----
+
+p <- ggplot(all_df, aes(x_id, y_id, fill = Jaccard)) +
+  
+  geom_tile(color = "grey85", size = 0.2) +
+  
+  scale_fill_gradient2(
+    low = "#2166AC",
+    mid = "white",
+    high = "#B2182B",
+    midpoint = 0.5,
+    limits = c(0,1),
+    name = "Jaccard"
+  ) +
+  
+  geom_vline(xintercept = block_lines + 0.5, size = 0.4) +
+  geom_hline(yintercept = block_lines + 0.5, size = 0.4) +
+  
+  coord_fixed() +
+  
+  theme_minimal() +
+  
+  theme(
+    axis.text.x = element_text(angle = 90, size = 4),
+    axis.text.y = element_text(size = 4),
+    panel.grid = element_blank()
+  ) +
+  
+  labs(
+    x = "",
+    y = "",
+    title = "Global module overlap across regions, sex and phenotype"
+  )
+
+# ---- 8. Guardar figura ----
+
+ggsave(
+  "global_module_overlap_heatmap.png",
+  p,
+  width = 14,
+  height = 14
+)
+
+################
+
+
+# Filtrar edges relevantes
+edges <- jaccard_df %>%
+  select(Module_1, Module_2, Jaccard, Region)
+
+nodes <- tibble(name = V(g)$name) %>%
+  mutate(
+    sex = ifelse(grepl("_M_", name), "Male", "Female"),
+    phenotype = ifelse(grepl("_AD_", name), "AD", "Control"),
+    region = sub("^(.*?)_.*", "\\1", name)
+  )
+
+V(g)$sex <- nodes$sex
+V(g)$phenotype <- nodes$phenotype
+V(g)$region <- nodes$region
+
+# Crear grafo
+g <- igraph::graph_from_data_frame(edges, directed = FALSE)
+
+png()
+ggraph(g, layout = "fr") +
+  
+  geom_edge_link(aes(width = Jaccard),
+                 alpha = 0.6,
+                 colour = "grey50") +
+  
+  geom_node_point(aes(color = phenotype,
+                      shape = sex),
+                  size = 4) +
+  
+  theme_void()
+dev.off()
