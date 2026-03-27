@@ -321,19 +321,4 @@ ggsave("panel_pca.jpeg",
        units = "in",
        dpi = 300)
 
-#La red está organizada alrededor de un “core” denso que coordina muchos nodos periféricos más débiles?
-#“Las redes AD muestran reorganización topológica global diferente por sexo”???
-
-#Nucleus
-
-nucleo_periferia <- ggplot(data, aes(kcore_max, deg_mean)) +
-  geom_point(size = 3) +
-  theme_bw()
-
-ggsave("nucleo_periferia.jpg",
-       nucleo_periferia,
-       width = 8,
-       height = 10,
-       dpi = 300)
-
 #END?
