@@ -335,5 +335,276 @@ ggsave("panel_global.jpg",
        dpi    = 300)
 
 # ============================================================
+# ADDITIONS: Sexual symmetry + Delta PC plots
+# Mirrors the comparative panel from interactive analysis
+# Insert after section 2 (PCA) in your original script
+# Requires: pca_df, var_exp, sex_cond_colors, col_f_ctrl,
+#           col_m_ctrl, col_f_ad, col_m_ad (already defined)
+# ============================================================
+
+# ---- Build trajectory delta data ----
+# One row per sex × region, with control and AD positions + deltas
+
+traj_data <- pca_df %>%
+  select(PC1, PC2, sex, condition, region) %>%
+  pivot_wider(
+    id_cols     = c(sex, region),
+    names_from  = condition,
+    values_from = c(PC1, PC2)
+  ) %>%
+  rename(
+    x_ctrl = PC1_control, y_ctrl = PC2_control,
+    x_ad   = PC1_AD,      y_ad   = PC2_AD
+  ) %>%
+  mutate(
+    sex       = factor(sex, levels = c("female", "male")),
+    region    = factor(region, levels = c("CRB", "DLPFC", "HCN", "PCC", "TC")),
+    delta_PC1 = x_ad - x_ctrl,
+    delta_PC2 = y_ad - y_ctrl
+  )
+
+# ---- Symmetry data: sex gap in control vs AD ----
+# FC − MC and FAD − MAD, for PC1 and PC2
+
+symmetry_data <- pca_df %>%
+  select(PC1, PC2, sex, condition, region) %>%
+  pivot_wider(
+    id_cols     = c(region, condition),
+    names_from  = sex,
+    values_from = c(PC1, PC2)
+  ) %>%
+  rename(
+    PC1_female = PC1_female, PC1_male = PC1_male,
+    PC2_female = PC2_female, PC2_male = PC2_male
+  ) %>%
+  mutate(
+    gap_PC1 = PC1_female - PC1_male,
+    gap_PC2 = PC2_female - PC2_male,
+    region    = factor(region,    levels = c("CRB", "DLPFC", "HCN", "PCC", "TC")),
+    condition = factor(condition, levels = c("control", "AD"),
+                       labels = c("Control (FC − MC)", "AD (FAD − MAD)"))
+  )
+
+# ============================================================
+# Plot A: Δ PC1 by AD — females vs males per region
+# ============================================================
+
+delta_PC1_long <- traj_data %>%
+  select(sex, region, delta_PC1) %>%
+  mutate(
+    sex    = factor(sex, labels = c("Female (FC→FAD)", "Male (MC→MAD)")),
+    region = factor(region, levels = c("CRB", "DLPFC", "HCN", "PCC", "TC"))
+  )
+
+delta_pc1.p <- ggplot(delta_PC1_long,
+                      aes(x = region, y = delta_PC1, fill = sex)) +
+  geom_col(
+    position = position_dodge(width = 0.65),
+    width    = 0.55,
+    color    = NA
+  ) +
+  geom_hline(yintercept = 0, color = "grey40", linewidth = 0.5) +
+  geom_text(
+    aes(
+      label = sprintf("%+.2f", delta_PC1),
+      vjust = ifelse(delta_PC1 >= 0, -0.4, 1.3)
+    ),
+    position    = position_dodge(width = 0.65),
+    size        = 3.2,
+    fontface    = "bold",
+    color       = "grey20"
+  ) +
+  scale_fill_manual(
+    values = c("Female (FC→FAD)" = col_f_ctrl,
+               "Male (MC→MAD)"   = col_m_ctrl),
+    name   = NULL
+  ) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.15, 0.15))
+  ) +
+  labs(
+    x = "Brain region",
+    y = expression(Delta * " PC1 (AD − Control)"),
+    title = paste0("PC1 — global integration (", round(var_exp[1], 1), "% variance)")
+  ) +
+  theme_cowplot(font_size = 12) +
+  theme(
+    legend.position = "top",
+    plot.title      = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
+  )
+
+# ============================================================
+# Plot B: Δ PC2 by AD — females vs males per region
+# ============================================================
+
+delta_PC2_long <- traj_data %>%
+  select(sex, region, delta_PC2) %>%
+  mutate(
+    sex    = factor(sex, labels = c("Female (FC→FAD)", "Male (MC→MAD)")),
+    region = factor(region, levels = c("CRB", "DLPFC", "HCN", "PCC", "TC"))
+  )
+
+delta_pc2.p <- ggplot(delta_PC2_long,
+                      aes(x = region, y = delta_PC2, fill = sex)) +
+  geom_col(
+    position = position_dodge(width = 0.65),
+    width    = 0.55,
+    color    = NA
+  ) +
+  geom_hline(yintercept = 0, color = "grey40", linewidth = 0.5) +
+  geom_text(
+    aes(
+      label = sprintf("%+.2f", delta_PC2),
+      vjust = ifelse(delta_PC2 >= 0, -0.4, 1.3)
+    ),
+    position    = position_dodge(width = 0.65),
+    size        = 3.2,
+    fontface    = "bold",
+    color       = "grey20"
+  ) +
+  scale_fill_manual(
+    values = c("Female (FC→FAD)" = col_f_ctrl,
+               "Male (MC→MAD)"   = col_m_ctrl),
+    name   = NULL
+  ) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.15, 0.15))
+  ) +
+  labs(
+    x = "Brain region",
+    y = expression(Delta * " PC2 (AD − Control)"),
+    title = paste0("PC2 — mesoscale organization (", round(var_exp[2], 1), "% variance)")
+  ) +
+  theme_cowplot(font_size = 12) +
+  theme(
+    legend.position = "top",
+    plot.title      = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
+  )
+
+# ============================================================
+# Plot C: Sexual symmetry — sex gap in PC1 (control vs AD)
+# ============================================================
+
+sym_pc1.p <- ggplot(symmetry_data,
+                    aes(x = region, y = gap_PC1, fill = condition)) +
+  geom_col(
+    position = position_dodge(width = 0.65),
+    width    = 0.55,
+    color    = NA
+  ) +
+  geom_hline(yintercept = 0, color = "grey40", linewidth = 0.5) +
+  geom_text(
+    aes(
+      label = sprintf("%+.2f", gap_PC1),
+      vjust = ifelse(gap_PC1 >= 0, -0.4, 1.3)
+    ),
+    position    = position_dodge(width = 0.65),
+    size        = 3.2,
+    fontface    = "bold",
+    color       = "grey20"
+  ) +
+  scale_fill_manual(
+    values = c("Control (FC − MC)" = col_m_ctrl,
+               "AD (FAD − MAD)"    = col_f_ad),
+    name   = NULL
+  ) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.18, 0.18))
+  ) +
+  labs(
+    x     = "Brain region",
+    y     = "PC1 sex gap (Female − Male)",
+    title = "Sexual asymmetry in PC1"
+  ) +
+  theme_cowplot(font_size = 12) +
+  theme(
+    legend.position    = "top",
+    plot.title         = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
+  )
+
+# ============================================================
+# Plot D: Sexual symmetry — sex gap in PC2 (control vs AD)
+# ============================================================
+
+sym_pc2.p <- ggplot(symmetry_data,
+                    aes(x = region, y = gap_PC2, fill = condition)) +
+  geom_col(
+    position = position_dodge(width = 0.65),
+    width    = 0.55,
+    color    = NA
+  ) +
+  geom_hline(yintercept = 0, color = "grey40", linewidth = 0.5) +
+  geom_text(
+    aes(
+      label = sprintf("%+.2f", gap_PC2),
+      vjust = ifelse(gap_PC2 >= 0, -0.4, 1.3)
+    ),
+    position    = position_dodge(width = 0.65),
+    size        = 3.2,
+    fontface    = "bold",
+    color       = "grey20"
+  ) +
+  scale_fill_manual(
+    values = c("Control (FC − MC)" = col_m_ctrl,
+               "AD (FAD − MAD)"    = col_f_ad),
+    name   = NULL
+  ) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.18, 0.18))
+  ) +
+  labs(
+    x     = "Brain region",
+    y     = "PC2 sex gap (Female − Male)",
+    title = "Sexual asymmetry in PC2"
+  ) +
+  theme_cowplot(font_size = 12) +
+  theme(
+    legend.position    = "top",
+    plot.title         = element_text(size = 12, face = "bold"),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
+  )
+
+# ============================================================
+# Save individual plots
+# ============================================================
+
+ggsave("delta_pc1.jpg",   delta_pc1.p, width = 7, height = 5, dpi = 300)
+ggsave("delta_pc2.jpg",   delta_pc2.p, width = 7, height = 5, dpi = 300)
+ggsave("sym_pc1.jpg",     sym_pc1.p,   width = 7, height = 5, dpi = 300)
+ggsave("sym_pc2.jpg",     sym_pc2.p,   width = 7, height = 5, dpi = 300)
+
+# ============================================================
+# Combined panel: 2x2
+#   A = Δ PC1  |  B = Δ PC2
+#   C = Sym PC1 | D = Sym PC2
+# ============================================================
+
+top_row    <- plot_grid(delta_pc1.p, delta_pc2.p,
+                        labels = c("A", "B"), ncol = 2,
+                        align  = "hv", axis = "tb")
+
+bottom_row <- plot_grid(sym_pc1.p, sym_pc2.p,
+                        labels = c("C", "D"), ncol = 2,
+                        align  = "hv", axis = "tb")
+
+panel_delta_sym <- plot_grid(top_row, bottom_row,
+                             ncol        = 1,
+                             rel_heights = c(1, 1))
+
+ggsave(
+  "panel_delta_symmetry.jpg",
+  panel_delta_sym,
+  width  = 14,
+  height = 10,
+  dpi    = 300
+)
+
+# ============================================================
+# END
+# ============================================================
+# ============================================================
 # END
 # ============================================================
