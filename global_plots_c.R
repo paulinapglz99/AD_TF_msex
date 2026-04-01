@@ -17,8 +17,8 @@ pacman::p_load(
 
 # ---- Paths ----
 
-base_dir <- "/STORAGE/genut/alzheimer/networks_ad_sex"
-out_dir  <- file.path(base_dir, "global_plots")
+base_dir <- "/home/tiamat/Documents/AD_TF_sex_data/networks_ad_sex/"
+out_dir  <- file.path(base_dir, "global_plots_local")
 dir.create(out_dir, showWarnings = FALSE)
 setwd(out_dir)
 
@@ -89,7 +89,7 @@ pca_df <- as.data.frame(pca$x) %>%
 
 #Save pca data
 
-#vroom::vroom_write(pca_df, file = "pca_df.csv")
+vroom::vroom_write(pca_df, file = "pca_df.csv")
 
 loadings <- as.data.frame(pca$rotation) %>%
   rownames_to_column("variable") %>%
@@ -134,11 +134,11 @@ pca_global.p <- ggplot(pca_df,
   stat_ellipse(aes(group = sex_cond),
                linewidth = 0.8, level = 0.85,
                show.legend = FALSE) +
-  geom_point(size = 5) +
+  geom_point(size = 8) +
   geom_text_repel(
     aes(label = label),
     color        = "black",
-    size         = 3.5,
+    size         = 6.5,
     show.legend  = FALSE,
     box.padding  = 0.4,
     max.overlaps = 20
@@ -151,19 +151,18 @@ pca_global.p <- ggplot(pca_df,
     y = paste0("PC2 (", round(var_exp[2], 1), "%)")
   ) +
   theme_cowplot(font_size = 13) +
-  theme(legend.position = "top") +
+  theme(legend.position = "top", 
+        legend.text=element_text(size=20)) +
   guides(
     color = guide_legend(nrow = 2, override.aes = list(size = 4)),
     shape = guide_legend(nrow = 2)
   )
 
+#Vis
+
+pca_global.p
+
 ggsave("pca_global.jpg", pca_global.p, width = 7, height = 7, dpi = 300)
-
-
-pca_regions <- pca_global.p +
-  facet_wrap(~region, nrow =5)
-
-ggsave("pca_regions.jpg", pca_regions, width = 5, height = 17, dpi = 300)
 
 # ============================================================
 # 3.  Contributions to PC1 & PC2
@@ -196,7 +195,7 @@ contrib.p <- ggplot(contrib_long,
   coord_flip() +
   facet_wrap(~ PC, scales = "free_y") +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-  labs(x = "Variable", y = "Contribution (%)") +
+  labs(x = element_blank(), y = "Contribution (%)") +
   theme_cowplot(font_size = 12) +
   theme(strip.text = element_text(face = "bold"))
 
@@ -308,31 +307,20 @@ delta_heatmap.p <- ggplot(delta_data,
     midpoint = 0,
     name = "AD − Control\n(SD units)"
   ) +
-  labs(x = "Region", y = "Network metric") +
+  labs(x = element_blank(), y = element_blank()) +
   theme_minimal(base_size = 12) +
   theme(
     strip.text  = element_text(face = "bold", size = 13),
-    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 15),
+    axis.text.y = element_text(size = 15),
     panel.grid  = element_blank()
   )
 
+#Vis
+
+delta_heatmap.p
+
 ggsave("delta_heatmap.jpg", delta_heatmap.p, width = 8, height = 10, dpi = 300)
-
-# ============================================================
-# 6.  Panel final
-#     A = PCA  |  B = Contribuciones
-#     C = Distancias euclidianas  |  D = Delta heatmap
-# ============================================================
-
-top_row    <- plot_grid(pca_global.p,     contrib.p,        labels = c("A", "B"), ncol = 2)
-bottom_row <- plot_grid(euclid_heatmap.p, delta_heatmap.p,  labels = c("C", "D"), ncol = 2)
-panel_full <- plot_grid(top_row, bottom_row, ncol = 1, rel_heights = c(1, 1.1))
-
-ggsave("panel_global.jpg",
-       panel_full,
-       width  = 22,
-       height = 20,
-       dpi    = 300)
 
 # ============================================================
 # ADDITIONS: Sexual symmetry + Delta PC plots
@@ -434,6 +422,9 @@ delta_pc1.p <- ggplot(delta_PC1_long,
     panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
   )
 
+#Vis 
+delta_pc1.p
+
 # ============================================================
 # Plot B: Δ PC2 by AD — females vs males per region
 # ============================================================
@@ -483,6 +474,10 @@ delta_pc2.p <- ggplot(delta_PC2_long,
     panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
   )
 
+#Vis 
+
+delta_pc2.p
+
 # ============================================================
 # Plot C: Sexual symmetry — sex gap in PC1 (control vs AD)
 # ============================================================
@@ -501,7 +496,7 @@ sym_pc1.p <- ggplot(symmetry_data,
       vjust = ifelse(gap_PC1 >= 0, -0.4, 1.3)
     ),
     position    = position_dodge(width = 0.65),
-    size        = 3.2,
+    size        = 6,
     fontface    = "bold",
     color       = "grey20"
   ) +
@@ -514,16 +509,18 @@ sym_pc1.p <- ggplot(symmetry_data,
     expand = expansion(mult = c(0.18, 0.18))
   ) +
   labs(
-    x     = "Brain region",
+    x     = element_blank(),
     y     = "PC1 sex gap (Female − Male)",
-    title = "Sexual asymmetry in PC1"
+    title = "Sexual asymmetry in PC1 — global integration"
   ) +
   theme_cowplot(font_size = 12) +
   theme(
     legend.position    = "top",
-    plot.title         = element_text(size = 12, face = "bold"),
+    plot.title         = element_text(size = 17, face = "bold"),
     panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
   )
+
+sym_pc1.p
 
 # ============================================================
 # Plot D: Sexual symmetry — sex gap in PC2 (control vs AD)
@@ -543,7 +540,7 @@ sym_pc2.p <- ggplot(symmetry_data,
       vjust = ifelse(gap_PC2 >= 0, -0.4, 1.3)
     ),
     position    = position_dodge(width = 0.65),
-    size        = 3.2,
+    size        = 6,
     fontface    = "bold",
     color       = "grey20"
   ) +
@@ -556,16 +553,20 @@ sym_pc2.p <- ggplot(symmetry_data,
     expand = expansion(mult = c(0.18, 0.18))
   ) +
   labs(
-    x     = "Brain region",
+    x     = element_blank(),
     y     = "PC2 sex gap (Female − Male)",
-    title = "Sexual asymmetry in PC2"
+    title = "Sexual asymmetry in PC2 — mesoscale organization"
   ) +
   theme_cowplot(font_size = 12) +
   theme(
     legend.position    = "top",
-    plot.title         = element_text(size = 12, face = "bold"),
+    plot.title         = element_text(size = 17, face = "bold"),
     panel.grid.major.y = element_line(color = "grey90", linewidth = 0.4)
   )
+
+#Vis
+
+sym_pc2.p
 
 # ============================================================
 # Save individual plots
@@ -577,34 +578,151 @@ ggsave("sym_pc1.jpg",     sym_pc1.p,   width = 7, height = 5, dpi = 300)
 ggsave("sym_pc2.jpg",     sym_pc2.p,   width = 7, height = 5, dpi = 300)
 
 # ============================================================
-# Combined panel: 2x2
-#   A = Δ PC1  |  B = Δ PC2
-#   C = Sym PC1 | D = Sym PC2
+# FIGURE 1 — Main results panel
+#   A = PCA global (large)
+#   B = Delta heatmap (metrics x region x sex)
+#   C = Sexual asymmetry PC1
+#   D = Sexual asymmetry PC2
 # ============================================================
 
-top_row    <- plot_grid(delta_pc1.p, delta_pc2.p,
-                        labels = c("A", "B"), ncol = 2,
-                        align  = "hv", axis = "tb")
+# Fix factor order in symmetry_data if not already done
+symmetry_data <- symmetry_data %>%
+  mutate(condition = factor(condition,
+                            levels = c("Control (FC − MC)", "AD (FAD − MAD)")))
 
-bottom_row <- plot_grid(sym_pc1.p, sym_pc2.p,
-                        labels = c("C", "D"), ncol = 2,
-                        align  = "hv", axis = "tb")
+# Rebuild sym plots with consistent x-axis order and cleaned theme
+sym_pc1_final.p <- sym_pc1.p +
+  scale_x_discrete(limits = c("CRB", "DLPFC", "HCN", "PCC", "TC")) +
+  theme(legend.position = "top")
 
-panel_delta_sym <- plot_grid(top_row, bottom_row,
-                             ncol        = 1,
-                             rel_heights = c(1, 1))
+sym_pc2_final.p <- sym_pc2.p +
+  scale_x_discrete(limits = c("CRB", "DLPFC", "HCN", "PCC", "TC")) +
+  theme(legend.position = "top")
 
+# Rebuild delta heatmap with sex ordered Female → Male
+delta_heatmap_final.p <- delta_heatmap.p +
+  theme(legend.position = "right")
+
+# ---- Assemble ----
+row1 <-  plot_grid(
+  pca_global.p,
+  delta_heatmap_final.p,
+  labels     = c("A", "B"),
+  ncol       = 2,
+  rel_widths = c(1, 1),
+  align      = "hv",
+  axis       = "tb"
+)
+
+row2 <- plot_grid(
+  sym_pc1_final.p,
+  sym_pc2_final.p,
+  labels     = c("C", "D"),
+  ncol       = 2,
+  rel_widths = c(1, 1),
+  align      = "hv",
+  axis       = "tb"
+)
+
+fig1 <- plot_grid(
+  row1,
+  row2,
+  labels      = c("A", ""),
+  ncol        = 1,
+  rel_heights = c(1.2, 1)
+)
+
+#Vis
+fig1 
+
+#Save
 ggsave(
-  "panel_delta_symmetry.jpg",
-  panel_delta_sym,
-  width  = 14,
-  height = 10,
+  "topos_PCA_main.jpg",
+  fig1,
+  width  = 16,
+  height = 16,
   dpi    = 300
 )
 
 # ============================================================
-# END
+# SUPPLEMENTARY FIGURE S1
+#   Row 1: PCA by region (facet, horizontal — nrow=1)
+#   Row 2: PCA contributions (PC1 | PC2)
+#   Row 3: ΔPC1 | ΔPC2
 # ============================================================
+
+# PCA by region: switch to nrow=1 (horizontal) for supplementary
+# so it reads left to right and doesn't compress vertically
+
+pca_regions_horiz <- ggplot(pca_df,
+                            aes(PC1, PC2,
+                                color = sex_cond,
+                                shape = sex_cond)) +
+  geom_point(size = 8) +
+  scale_color_manual(values = sex_cond_colors, labels = sex_cond_labels, name = NULL) +
+  scale_fill_manual(values  = sex_cond_colors, labels = sex_cond_labels, name = NULL) +
+  scale_shape_manual(values = sex_cond_shapes, labels = sex_cond_labels, name = NULL) +
+  labs(
+    x = paste0("PC1 (", round(var_exp[1], 1), "%)"),
+    y = paste0("PC2 (", round(var_exp[2], 1), "%)"),
+    
+  ) +
+  theme_cowplot(font_size = 13) +
+  theme(legend.position = "top", 
+        legend.text=element_text(size=20)) +
+  guides(
+    color = guide_legend(nrow = 2, override.aes = list(size = 4)),
+    shape = guide_legend(nrow = 2)
+  ) + 
+  facet_wrap(~ region, nrow = 1) +
+  theme(
+    axis.text=element_text(size=12),
+    axis.title=element_text(size=18),
+    legend.position = "top",
+    strip.text      = element_text(face = "bold", size = 19), 
+    #strip.background = "gray", 
+    #strip.placement = "bottom"
+  )
+
+#Vis
+pca_regions_horiz
+
+# Contributions: already built as contrib.p (PC1 | PC2 faceted)
+
+# Delta plots: reuse delta_pc1.p and delta_pc2.p
+
+row_s2 <- plot_grid(
+  contrib.p,
+  labels = c("B"),
+  ncol   = 1
+)
+
+row_s3 <- plot_grid(
+  delta_pc1.p,
+  delta_pc2.p,
+  labels     = c("C", "D"),
+  ncol       = 2,
+  align      = "hv",
+  axis       = "tb"
+)
+
+figS1 <- plot_grid(
+  pca_regions_horiz,
+  row_s2,
+  row_s3,
+  labels      = c("A", "", ""),
+  ncol        = 1,
+  rel_heights = c(0.9, 1.1, 0.9)
+)
+
+ggsave(
+  "PCA_topos_supplementary.jpg",
+  figS1,
+  width  = 18,
+  height = 20,
+  dpi    = 300
+)
+
 # ============================================================
 # END
 # ============================================================
