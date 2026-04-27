@@ -59,11 +59,16 @@ arg_counts_msex1_cerad_1 <-  args[4] #onvre enfermo
 
 arg_counts_msex0_cerad_4 <-  args[5]  #mujer sana
 arg_counts_msex1_cerad_4 <-  args[6] #onvre sano
-
-readr::write_tsv(counts_msex0_cerad_1, arg_counts_msex0_cerad_1)
-readr::write_tsv(counts_msex1_cerad_1, arg_counts_msex1_cerad_1)
-readr::write_tsv(counts_msex0_cerad_4, arg_counts_msex0_cerad_4)
-readr::write_tsv(counts_msex1_cerad_4, arg_counts_msex1_cerad_4)
+# 
+# readr::write_tsv(counts_msex0_cerad_1, arg_counts_msex0_cerad_1)
+# readr::write_tsv(counts_msex1_cerad_1, arg_counts_msex1_cerad_1)
+# readr::write_tsv(counts_msex0_cerad_4, arg_counts_msex0_cerad_4)
+# readr::write_tsv(counts_msex1_cerad_4, arg_counts_msex1_cerad_4)
+# Save data as RDS --- ---
+saveRDS(counts_msex0_cerad_1, arg_counts_msex0_cerad_1)
+saveRDS(counts_msex1_cerad_1, arg_counts_msex1_cerad_1)
+saveRDS(counts_msex0_cerad_4, arg_counts_msex0_cerad_4)
+saveRDS(counts_msex1_cerad_4, arg_counts_msex1_cerad_4)
 
 #Save metadata --- ----
 
