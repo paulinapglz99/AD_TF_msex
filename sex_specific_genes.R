@@ -23,7 +23,9 @@ library(AnnotationDbi)
 #   1. Load raw count matrix, remove STAR summary rows, clean ENSEMBL suffixes
 #   2. Load filteredQC metadata and restrict specimenIDs to those in the matrix
 #   3. Split samples by sex, compute CPM per group
-#   4. Apply criteria: CPM < 1 in ALL females, CPM >= 1 in >= 90% of males
+#   4. Apply criteria (both directions):
+#      A. CPM < 1 in ALL females, CPM >= 1 in >= 90% of males
+#      B. CPM < 1 in ALL males,   CPM >= 1 in >= 90% of females
 #   5. Translate ENSEMBL -> HGNC symbol (local annotation first, org.Hs.eg.db fallback)
 # =============================================================================
 
@@ -84,7 +86,7 @@ regions <- list(
 
 load_annotation <- function(path) {
   vroom::vroom(path, show_col_types = FALSE) %>%
-    select(feature, hgnc_symbol) %>%
+    dplyr::select(feature, hgnc_symbol) %>%
     filter(!is.na(hgnc_symbol), hgnc_symbol != "") %>%
     distinct(feature, .keep_all = TRUE)
 }
@@ -118,7 +120,7 @@ translate_symbols <- function(ensembl_ids, annotation) {
     result <- result %>%
       left_join(fallback, by = "ensembl_id") %>%
       mutate(symbol = coalesce(symbol, symbol_fallback)) %>%
-      select(-symbol_fallback)
+      dplyr::select(-symbol_fallback)
   }
   
   n_fallback <- sum(!is.na(result$symbol)) - n_local
@@ -212,6 +214,37 @@ find_absent_in_females <- function(female_cpm, male_cpm,
   )
 }
 
+# ---- Apply absent-in-males / present-in-females criteria ------------------
+
+find_absent_in_males <- function(female_cpm, male_cpm,
+                                 cpm_threshold    = 1,
+                                 female_threshold = 0.90) {
+  
+  shared_genes <- intersect(rownames(female_cpm), rownames(male_cpm))
+  female_cpm   <- female_cpm[shared_genes, , drop = FALSE]
+  male_cpm     <- male_cpm[shared_genes,   , drop = FALSE]
+  
+  absent_in_all_males     <- rowSums(male_cpm   >= cpm_threshold) == 0
+  present_in_most_females <- rowSums(female_cpm >= cpm_threshold) / ncol(female_cpm) >= female_threshold
+  
+  message("  Genes absent in ALL males (CPM < 1):           ", sum(absent_in_all_males))
+  message("  Genes present in >=90% of females (CPM >= 1):  ", sum(present_in_most_females))
+  message("  Genes satisfying BOTH criteria:                ",
+          sum(absent_in_all_males & present_in_most_females))
+  
+  hits <- shared_genes[absent_in_all_males & present_in_most_females]
+  
+  if (length(hits) == 0) return(tibble())
+  
+  tibble(
+    ensembl_id            = hits,
+    n_female_samples      = ncol(female_cpm),
+    n_male_samples        = ncol(male_cpm),
+    pct_females_expressed = round(
+      rowSums(female_cpm[hits, , drop = FALSE] >= cpm_threshold) / ncol(female_cpm) * 100, 1)
+  )
+}
+
 # =============================================================================
 # LOAD ANNOTATION (once, reused for all regions)
 # =============================================================================
@@ -235,27 +268,36 @@ results <- imap(regions, function(r, region_name) {
   message("  Preview (5x5):")
   print(raw[1:5, 1:5])
   
-  # Step 2: split by sex and compute CPM
+  # Step 2: split by sex and compute CPM (done once, reused for both directions)
   sex_data <- split_by_sex(raw, r$meta, r$sex_col, r$female_val, r$male_val)
   
   message("  CPM female preview (5x3):")
   print(round(sex_data$female_cpm[1:5, 1:3], 2))
   
-  # Step 3: apply absent/present criteria
-  hits <- find_absent_in_females(sex_data$female_cpm, sex_data$male_cpm)
+  # Step 3A: absent in ALL females, present in >= 90% of males
+  message("\n  --- Direction A: absent in females, present in males ---")
+  hits_A <- find_absent_in_females(sex_data$female_cpm, sex_data$male_cpm)
   
-  if (nrow(hits) == 0) {
-    message("  No genes found for ", region_name)
-    return(tibble())
+  # Step 3B: absent in ALL males, present in >= 90% of females
+  message("\n  --- Direction B: absent in males, present in females ---")
+  hits_B <- find_absent_in_males(sex_data$female_cpm, sex_data$male_cpm)
+  
+  # Step 4: translate ENSEMBL -> SYMBOL and tag direction
+  format_hits <- function(hits, direction) {
+    if (nrow(hits) == 0) return(tibble())
+    hits %>%
+      mutate(
+        symbol    = translate_symbols(ensembl_id, annotation),
+        region    = region_name,
+        direction = direction
+      ) %>%
+      dplyr::select(region, direction, ensembl_id, symbol, everything())
   }
   
-  # Step 4: translate ENSEMBL -> SYMBOL
-  hits %>%
-    mutate(
-      symbol = translate_symbols(ensembl_id, annotation),
-      region = region_name
-    ) %>%
-    select(region, ensembl_id, symbol, everything())
+  bind_rows(
+    format_hits(hits_A, "absent_in_females"),
+    format_hits(hits_B, "absent_in_males")
+  )
 })
 
 # =============================================================================
@@ -264,18 +306,18 @@ results <- imap(regions, function(r, region_name) {
 
 results_df <- bind_rows(results)
 
-write_csv(results_df, "sex_absent_genes_per_region.csv")
+write_csv(results_df, "sex_specific_genes_per_region.csv")
 
 # ---- Summary ---------------------------------------------------------------
 
-message("\n===== SUMMARY PER REGION =====")
+message("\n===== SUMMARY PER REGION AND DIRECTION =====")
 results_df %>%
-  count(region, name = "n_genes") %>%
+  count(region, direction, name = "n_genes") %>%
   print()
 
-message("\nGenes found in more than one region:")
+message("\nGenes found in more than one region (by direction):")
 results_df %>%
-  count(ensembl_id, symbol, name = "n_regions") %>%
+  count(direction, ensembl_id, symbol, name = "n_regions") %>%
   filter(n_regions > 1) %>%
-  arrange(desc(n_regions)) %>%
+  arrange(direction, desc(n_regions)) %>%
   print()
