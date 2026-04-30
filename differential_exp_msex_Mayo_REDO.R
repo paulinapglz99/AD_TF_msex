@@ -51,6 +51,10 @@ set.seed(10)
 # metadata <- vroom::vroom("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
 # brain_area <- "TC_Mayo"
 
+counts <- readRDS("/STORAGE/genut/alzheimer/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_rawcounts_CRB.rds") %>% as.data.frame()
+metadata <- vroom::vroom("/datos/rosmap/data_by_counts/Mayo_counts/counts_by_tissue/cerebellum/Mayo_RNAseq_metadata_CRB.txt")
+brain_area <- "TC_Mayo"
+
 cat("# Define functions \n")
 
 #Load data
