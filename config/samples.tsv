@@ -1,0 +1,6 @@
+region	study	tissue	covariates_tissue
+DLPFC	ROSMAP	dorsolateral prefrontal cortex	DLPFC
+HCN	ROSMAP	Head of caudate nucleus	ACC
+PCC	ROSMAP	posterior cingulate cortex	PCC
+TC	Mayo	temporal cortex	TCX
+CRB	Mayo	cerebellum	CBE

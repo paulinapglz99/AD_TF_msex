@@ -1,0 +1,94 @@
+import pandas as pd
+from snakemake.utils import min_version
+
+min_version("9.0")
+
+
+configfile: "config/config.yaml"
+
+
+# Synapse token is read from this environment variable (never written in the repo)
+envvars:
+    "SYNAPSE_AUTH_TOKEN",
+
+
+# ---- Tables from config/ ----------------------------------------------------
+
+# Brain regions: region, study, tissue (value of the 'tissue' column in the metadata)
+REGIONS = pd.read_csv(config["samples"], sep="\t", dtype=str).set_index(
+    "region", drop=False
+)
+
+# Files to download. Columns: syn_id, version, category, filename, description
+FILES = pd.read_csv(config["synapse_files"], sep="\t", dtype=str)
+
+
+wildcard_constraints:
+    category="|".join(sorted(set(FILES["category"]))),
+    filename=r"[^/]+",
+
+
+rule all:
+    default_target: True
+    input:
+        collect(
+            "resources/{category}/{filename}",
+            zip,
+            category=FILES["category"],
+            filename=FILES["filename"],
+        ),
+        "results/plots/supplementary/metadata_panel.pdf",
+
+
+# ---- 1. Download count matrices and metadata from Synapse -------------------
+
+
+rule download_synapse:
+    output:
+        protected("resources/{category}/{filename}"),
+    log:
+        "logs/download_synapse/{category}/{filename}.log",
+    conda:
+        "envs/synapse.yaml"
+    params:
+        syn_id=lookup(
+            query="category == '{category}' & filename == '{filename}'",
+            within=FILES,
+            cols="syn_id",
+        ),
+        version=lookup(
+            query="category == '{category}' & filename == '{filename}'",
+            within=FILES,
+            cols="version",
+        ),
+    shell:
+        "synapse get {params.syn_id} --version {params.version} "
+        "--downloadLocation resources/{wildcards.category} > {log:q} 2>&1"
+
+
+# ---- 2. Plot the metadata ---------------------------------------------------
+
+
+# Supplementary panel: samples per group, sex proportion, age/PMI/RIN, XIST vs UTY
+rule plot_metadata:
+    input:
+        regions=config["samples"],
+        rosmap_covariates="resources/metadata/ROSMAP_Covariates_ages_censored.tsv",
+        mayo_covariates="resources/metadata/Mayo_Covariates_ages_censored.tsv",
+        rosmap_counts=collect(
+            "resources/data/ROSMAP_batch{batch}_gene_all_counts_matrix_clean.txt",
+            batch=[1, 2, 3, 4],
+        ),
+        mayo_counts="resources/data/Mayo_gene_all_counts_matrix_clean.txt",
+        theme="workflow/scripts/R/theme_pub.R",
+    output:
+        pdf="results/plots/supplementary/metadata_panel.pdf",
+        jpeg="results/plots/supplementary/metadata_panel.jpeg",
+    log:
+        "logs/plot_metadata.log",
+    conda:
+        "envs/plots_r.yaml"
+    params:
+        diagnoses=config["diagnoses"],
+    script:
+        "scripts/0.1plot_metadatas.R"

@@ -1,0 +1,25 @@
+# Snakemake
+.snakemake/
+results/
+logs/
+benchmarks/
+
+# Downloaded data (large, regenerable by the workflow)
+resources/*
+!resources/.gitkeep
+
+# Credentials (Synapse token etc.) - never commit
+.synapseConfig
+.env
+*.token
+
+# R / Python
+.Rhistory
+.RData
+.Rproj.user/
+__pycache__/
+*.pyc
+
+# Editors / OS
+.vscode/
+.DS_Store

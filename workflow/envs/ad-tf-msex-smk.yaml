@@ -1,0 +1,13 @@
+# Driver environment: runs Snakemake itself (not used by any rule).
+
+name: ad-tf-msex-smk
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.12
+  - snakemake=9.27.1
+  - snakefmt=2.1.0
+  - go-shfmt=3.14.1 # snakefmt uses it to format shell blocks
+  - pandas=2.3.3

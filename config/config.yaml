@@ -1,0 +1,15 @@
+# Brain regions analysed. Columns:
+#   region             short name used in file names
+#   study              ROSMAP or Mayo
+#   tissue             value of 'tissue' in the RNAseq_Harmonization_*_combined_metadata.csv
+#   covariates_tissue  value of 'tissue' in Sage's *_Covariates_ages_censored.tsv
+#                      (Sage calls the head of caudate nucleus "ACC")
+samples: config/samples.tsv
+
+# Table of Synapse files to download.
+# Columns: syn_id, version, category (data | metadata), filename, description
+synapse_files: config/synapse_files.tsv
+
+# Diagnosis groups to keep: values of Sage's harmonized 'diagnosis' column
+# (ROSMAP: AD, CT, OTHER; Mayo: AD, CT, PSP, PATH_AGE)
+diagnoses: [AD, CT]
