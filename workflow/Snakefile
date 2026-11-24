@@ -802,11 +802,30 @@ rule gene_rewiring:
         "scripts/gene_rewiring.R"
 
 
+# Function of the genes rewired in women only, in men only and in both
+rule rewiring_enrichment:
+    input:
+        genes="results/network_analysis/{region}/gene_rewiring.tsv",
+    output:
+        "results/network_analysis/{region}/rewiring_enrichment.tsv",
+    log:
+        "logs/network_analysis/{region}/rewiring_enrichment.log",
+    conda:
+        "envs/gsea.yaml"
+    params:
+        min_size=config["network_analysis"]["rewiring_enrichment"]["min_size"],
+        max_size=config["network_analysis"]["rewiring_enrichment"]["max_size"],
+        padj=config["network_analysis"]["rewiring_enrichment"]["padj"],
+    script:
+        "scripts/rewiring_enrichment.R"
+
+
 # ---- 9. Figures of the networks ---------------------------------------------
 
 
-# Main figure: (a) convergence/divergence index, (b) edge Jaccard AD vs CT per
-# sex, (c) rewired genes x DEGs, (d) rewiring in women vs in men
+# Main figure: (a) rewiring in women vs in men, (b) rewired genes x DEGs,
+# (c) function of the genes rewired in one sex only, (d) convergence/divergence
+# index, (e) edge Jaccard AD vs CT per sex
 rule plot_networks_by_sex:
     input:
         convergence=collect(
@@ -823,6 +842,10 @@ rule plot_networks_by_sex:
         tests=collect(
             "results/network_analysis/{region}/rewiring_vs_de.tsv", region=REGIONS.index
         ),
+        enrichment=collect(
+            "results/network_analysis/{region}/rewiring_enrichment.tsv",
+            region=REGIONS.index,
+        ),
         regions=config["samples"],
         theme="workflow/scripts/R/theme_pub.R",
     output:
@@ -832,19 +855,17 @@ rule plot_networks_by_sex:
         "logs/plot_networks_by_sex.log",
     conda:
         "envs/plots_r.yaml"
+    params:
+        collection=config["network_figures"]["collection"],
+        top_terms=config["network_figures"]["top_terms"],
     script:
         "scripts/plot_networks_by_sex.R"
 
 
-# Supplementary: (a) topology of the 20 networks, (b) every pair of networks
-# with every measure, (c) sensitivity of the rewired x DEG overlap
+# Supplementary: (a) every pair of networks with every measure,
+# (b) sensitivity of the rewired x DEG overlap
 rule plot_networks_supplementary:
     input:
-        metrics=collect(
-            "results/network_analysis/{region}/{group}/metrics.tsv",
-            region=REGIONS.index,
-            group=GROUPS,
-        ),
         pairs=collect(
             "results/network_analysis/{region}/comparison_pairs.tsv",
             region=REGIONS.index,
@@ -863,6 +884,36 @@ rule plot_networks_supplementary:
         "envs/plots_r.yaml"
     script:
         "scripts/plot_networks_supplementary.R"
+
+
+# Supplementary: topology of the 20 networks (metrics, degree distributions,
+# edges vs number of samples)
+rule plot_network_topology:
+    input:
+        metrics=collect(
+            "results/network_analysis/{region}/{group}/metrics.tsv",
+            region=REGIONS.index,
+            group=GROUPS,
+        ),
+        nodes=collect(
+            "results/network_analysis/{region}/{group}/nodes.tsv",
+            region=REGIONS.index,
+            group=GROUPS,
+        ),
+        samples=collect(
+            "results/sample_qc/{region}/samples_kept.tsv", region=REGIONS.index
+        ),
+        regions=config["samples"],
+        theme="workflow/scripts/R/theme_pub.R",
+    output:
+        pdf="results/plots/supplementary/network_topology_panel.pdf",
+        jpeg="results/plots/supplementary/network_topology_panel.jpeg",
+    log:
+        "logs/plot_network_topology.log",
+    conda:
+        "envs/plots_r.yaml"
+    script:
+        "scripts/plot_network_topology.R"
 
 
 # Supplementary: main function of the largest communities of the 20 networks
