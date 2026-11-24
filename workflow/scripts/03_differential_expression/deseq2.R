@@ -6,8 +6,8 @@
 # Normalization: the GC/length factors of gc_normalize (EDASeq), not DESeq2's
 # size factors.
 # Each contrast gives a weight per group (numerator +1, denominator -1), e.g.
-#   AD_vs_CT_female            AD_female - CT_female
-#   sex_diagnosis_interaction  (AD_female - CT_female) - (AD_male - CT_male)
+#   ADvsCT_female  AD_female - CT_female
+#   sexXdx         (AD_female - CT_female) - (AD_male - CT_male)
 # Contrasts that compare women with men (the interaction) are tested only on
 # genes expressed in both sexes: column 'tested', padj recomputed among them.
 # Writes one table per contrast (all genes of the model) and a summary of DEGs.
@@ -149,8 +149,12 @@ group_means <- counts(dds, normalized = TRUE) %>%
 
 # ---- One table per contrast -------------------------------------------------
 
+# The table of one contrast among the outputs: the one that ends in _<contrast>.tsv
+# (e.g. degs_ROSMAP_DLPFC_ADvsCT_female.tsv)
 output_of <- function(name) {
-  grep(paste0("/", name, "\\.tsv$"), snakemake@output[["tables"]], value = TRUE)
+  file <- grep(paste0("_", name, "\\.tsv$"), snakemake@output[["tables"]], value = TRUE)
+  stopifnot(length(file) == 1)
+  file
 }
 
 summaries <- lapply(names(contrasts), function(name) {

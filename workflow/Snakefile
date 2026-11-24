@@ -19,6 +19,9 @@ REGIONS = pd.read_csv(config["samples"], sep="\t", dtype=str).set_index(
     "region", drop=False
 )
 
+# Cohort of each region, as written in the file names (ROSMAP, MAYO)
+COHORT = REGIONS["study"].str.upper().to_dict()
+
 # Files to download. Columns: syn_id, version, category, filename, description
 FILES = pd.read_csv(config["synapse_files"], sep="\t", dtype=str)
 
@@ -44,26 +47,98 @@ def deseq2_covariates_of(wildcards):
     return config["deseq2"]["covariates"][study]
 
 
-# Names of the DESeq2 contrasts, e.g. AD_vs_CT_female
-CONTRASTS = list(config["deseq2"]["contrasts"])
-
-# Groups of samples (diagnosis x sex), e.g. AD_female: one network each
-GROUPS = [f"{dx}_{sex}" for dx in config["diagnoses"] for sex in ["female", "male"]]
-
-
 def metadata_of(wildcards):
     """Original metadata of the region's study (library prep, kit, read length)"""
     study = REGIONS.loc[wildcards.region, "study"]
     return f"resources/metadata/RNAseq_Harmonization_{study}_combined_metadata.csv"
 
 
+# Names of the DESeq2 contrasts, e.g. ADvsCT_female
+CONTRASTS = list(config["deseq2"]["contrasts"])
+
+# Groups of samples (diagnosis x sex), e.g. AD_female: one network each
+GROUPS = [f"{dx}_{sex}" for dx in config["diagnoses"] for sex in ["female", "male"]]
+
+
 wildcard_constraints:
     category="|".join(sorted(set(FILES["category"]))),
     filename=r"[^/]+",
+    cohort="|".join(sorted(set(COHORT.values()))),
     region="|".join(REGIONS.index),
     contrast="|".join(CONTRASTS),
     group="|".join(GROUPS),
     seed=r"\d+",
+
+
+# ---- Result files -----------------------------------------------------------
+# results/<step>/<region>/<experiment>_<cohort>_<region>[_<diagnosis>_<sex>].<ext>
+# One folder per step of the pipeline (numbered like workflow/scripts/) and one
+# per region inside it. "_all" = every group of the region; a contrast name
+# (ADvsCT_female...) instead of the group in the differential expression files.
+
+# 02. Preprocessing
+# counts of the AD/CT samples
+RAWCOUNTS = "results/02_preprocessing/{region}/rawcounts_{cohort}_{region}.rds"
+# their metadata
+RAWMETADATA = "results/02_preprocessing/{region}/rawmetadata_{cohort}_{region}.tsv"
+# GC/length normalization factors
+GCFACTORS = "results/02_preprocessing/{region}/gcFactors_{cohort}_{region}.rds"
+# GC/length bias before and after
+GCBIAS = "results/02_preprocessing/{region}/gcBias_{cohort}_{region}.tsv"
+PCAPRE_SCORES = "results/02_preprocessing/{region}/pcaPreScores_{cohort}_{region}.tsv"
+PCAPRE_VARIANCE = "results/02_preprocessing/{region}/pcaPreVariance_{cohort}_{region}.tsv"
+PCAPRE_COVARIATES = "results/02_preprocessing/{region}/pcaPreCovariates_{cohort}_{region}.tsv"
+# QC of every sample (outliers)
+SAMPLEQC = "results/02_preprocessing/{region}/sampleQC_{cohort}_{region}_all.tsv"
+# samples kept after the QC
+METADATA = "results/02_preprocessing/{region}/metadata_{cohort}_{region}_all.tsv"
+
+# 03. Differential expression
+DDS = "results/03_differential_expression/{region}/dds_{cohort}_{region}.rds"
+DEGS = "results/03_differential_expression/{region}/degs_{cohort}_{region}_{contrast}.tsv"
+DEGSUMMARY = "results/03_differential_expression/{region}/degSummary_{cohort}_{region}.tsv"
+GSEA = "results/03_differential_expression/{region}/gsea_{cohort}_{region}_{contrast}.tsv"
+
+# 04. Network inference
+# corrected expression
+MATRIX_ALL = "results/04_network_inference/{region}/matrizQC_{cohort}_{region}_all.rds"
+PCAPOST_SCORES = "results/04_network_inference/{region}/pcaPostScores_{cohort}_{region}.tsv"
+PCAPOST_VARIANCE = "results/04_network_inference/{region}/pcaPostVariance_{cohort}_{region}.tsv"
+PCAPOST_COVARIATES = "results/04_network_inference/{region}/pcaPostCovariates_{cohort}_{region}.tsv"
+SAMPLEDIST = "results/04_network_inference/{region}/sampleDist_{cohort}_{region}.tsv"
+# input of ARACNe-AP
+MATRIX = "results/04_network_inference/{region}/matrizQC_{cohort}_{region}_{group}.tsv"
+METADATA_GROUP = "results/04_network_inference/{region}/metadata_{cohort}_{region}_{group}.tsv"
+REGULATORS = "results/04_network_inference/{region}/regulators_{cohort}_{region}.txt"
+NETWORK = "results/04_network_inference/{region}/coexprnet_{cohort}_{region}_{group}.tsv"
+
+# 05. Network topology
+NETMETRICS = "results/05_network_topology/{region}/netMetrics_{cohort}_{region}_{group}.tsv"
+NETNODES = "results/05_network_topology/{region}/netNodes_{cohort}_{region}_{group}.tsv"
+COMMENRICH = "results/05_network_topology/{region}/commEnrich_{cohort}_{region}_{group}.tsv"
+
+# 06. Network comparison
+NETPAIRS = "results/06_network_comparison/{region}/netPairs_{cohort}_{region}.tsv"
+CONVERGENCE = "results/06_network_comparison/{region}/convergence_{cohort}_{region}.tsv"
+REWIRING = "results/06_network_comparison/{region}/rewiring_{cohort}_{region}.tsv"
+REWIRINGVSDEG = "results/06_network_comparison/{region}/rewiringVsDEG_{cohort}_{region}.tsv"
+REWIRINGENRICH = "results/06_network_comparison/{region}/rewiringEnrich_{cohort}_{region}.tsv"
+
+THEME = "workflow/scripts/utils/theme_pub.R"
+
+
+def per_region(pattern, **wildcards):
+    """The file of every region (with its cohort), in the order of samples.tsv"""
+    return [
+        path
+        for region in REGIONS.index
+        for path in expand(pattern, region=region, cohort=COHORT[region], **wildcards)
+    ]
+
+
+def of_contrast(pattern, name):
+    """A per-region pattern with one contrast of config.yaml (figures/<name>)"""
+    return pattern.replace("{contrast}", config["figures"][name])
 
 
 rule all:
@@ -77,25 +152,17 @@ rule all:
         ),
         "results/plots/supplementary/metadata_panel.pdf",
         "results/plots/supplementary/pca_pre_panel.pdf",
-        collect("results/deseq2/{region}/summary.tsv", region=REGIONS.index),
-        collect(
-            "results/gsea/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=CONTRASTS,
-        ),
+        per_region(DEGSUMMARY),
+        per_region(GSEA, contrast=CONTRASTS),
         "results/plots/main/degs_ad_by_sex.pdf",
         "results/plots/supplementary/de_panel.pdf",
         "results/plots/supplementary/pathways_by_sex.pdf",
         "results/plots/supplementary/pca_post_panel.pdf",
         "results/plots/supplementary/sample_qc_panel.pdf",
-        collect(
-            "results/network_input/{region}/{group}.tsv",
-            region=REGIONS.index,
-            group=GROUPS,
-        ),
+        per_region(MATRIX, group=GROUPS),
 
 
-# ---- 1. Download count matrices and metadata from Synapse -------------------
+# ---- 00. Download count matrices and metadata from Synapse ------------------
 
 
 rule download_synapse:
@@ -121,7 +188,7 @@ rule download_synapse:
         "--downloadLocation resources/{wildcards.category} > {log:q} 2>&1"
 
 
-# ---- 2. Plot the metadata ---------------------------------------------------
+# ---- 01. Metadata -----------------------------------------------------------
 
 
 # Supplementary panel: samples per group, sex proportion, age/PMI/RIN, XIST vs UTY
@@ -135,7 +202,7 @@ rule plot_metadata:
             batch=[1, 2, 3, 4],
         ),
         mayo_counts="resources/data/Mayo_gene_all_counts_matrix_clean.txt",
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/metadata_panel.pdf",
         jpeg="results/plots/supplementary/metadata_panel.jpeg",
@@ -146,10 +213,10 @@ rule plot_metadata:
     params:
         diagnoses=config["diagnoses"],
     script:
-        "scripts/0.1plot_metadatas.R"
+        "scripts/01_metadata/plot_metadata.R"
 
 
-# ---- 3. Count matrix of each region -----------------------------------------
+# ---- 02. Preprocessing ------------------------------------------------------
 
 
 # AD/CT samples of one region, one per individual, with their raw counts.
@@ -161,20 +228,20 @@ rule prepare_counts:
         metadata=metadata_of,
         regions=config["samples"],
     output:
-        counts="results/counts/{region}/counts.rds",
-        samples="results/counts/{region}/samples.tsv",
+        counts=RAWCOUNTS,
+        samples=RAWMETADATA,
     log:
-        "logs/prepare_counts/{region}.log",
+        "logs/prepare_counts/{cohort}_{region}.log",
     conda:
         "envs/r_tidy.yaml"
     params:
         diagnoses=config["diagnoses"],
         min_batch_size=config["min_batch_size"],
     script:
-        "scripts/prepare_counts.R"
+        "scripts/02_preprocessing/prepare_counts.R"
 
 
-# GC content and length of every gene, from a fixed Ensembl archive (biomaRt).
+# GC content and length of every gene, from a fixed Ensembl archive (BioMart).
 # Needs internet only when it runs (once).
 rule gene_annotation:
     output:
@@ -186,7 +253,7 @@ rule gene_annotation:
     params:
         host=config["annotation"]["ensembl_host"],
     script:
-        "scripts/gene_annotation.R"
+        "scripts/02_preprocessing/gene_annotation.R"
 
 
 # GC and length correction of each region (EDASeq) as normalization factors,
@@ -194,41 +261,38 @@ rule gene_annotation:
 # deseq2 and network_qc.
 rule gc_normalize:
     input:
-        counts="results/counts/{region}/counts.rds",
-        samples="results/counts/{region}/samples.tsv",
+        counts=RAWCOUNTS,
+        samples=RAWMETADATA,
         annotation=config["annotation"]["file"],
-        gene_filter="workflow/scripts/R/gene_filter.R",
+        gene_filter="workflow/scripts/utils/gene_filter.R",
     output:
-        factors="results/gc_normalize/{region}/normalization_factors.rds",
-        bias="results/gc_normalize/{region}/bias.tsv",
+        factors=GCFACTORS,
+        bias=GCBIAS,
     log:
-        "logs/gc_normalize/{region}.log",
+        "logs/gc_normalize/{cohort}_{region}.log",
     conda:
         "envs/deseq2.yaml"
     params:
         min_cpm=config["gene_filter"]["min_cpm"],
         min_fraction=config["gene_filter"]["min_fraction"],
     script:
-        "scripts/gc_normalize.R"
-
-
-# ---- 4. Differential expression ---------------------------------------------
+        "scripts/02_preprocessing/gc_normalize.R"
 
 
 # PCA of each region before any correction, and variance of each PC explained
 # by each covariate, to choose the covariates of the DESeq2 model (tables only)
 rule pca_pre:
     input:
-        counts="results/counts/{region}/counts.rds",
-        samples="results/counts/{region}/samples.tsv",
-        gene_filter="workflow/scripts/R/gene_filter.R",
-        expression_utils="workflow/scripts/R/expression_utils.R",
+        counts=RAWCOUNTS,
+        samples=RAWMETADATA,
+        gene_filter="workflow/scripts/utils/gene_filter.R",
+        expression_utils="workflow/scripts/utils/expression_utils.R",
     output:
-        scores="results/pca_pre/{region}/scores.tsv",
-        variance="results/pca_pre/{region}/variance.tsv",
-        association="results/pca_pre/{region}/covariate_association.tsv",
+        scores=PCAPRE_SCORES,
+        variance=PCAPRE_VARIANCE,
+        association=PCAPRE_COVARIATES,
     log:
-        "logs/pca_pre/{region}.log",
+        "logs/pca_pre/{cohort}_{region}.log",
     conda:
         "envs/deseq2.yaml"
     params:
@@ -238,19 +302,17 @@ rule pca_pre:
         n_pcs=config["pca"]["n_pcs"],
         covariates=config["pca"]["covariates"],
     script:
-        "scripts/pca_pre.R"
+        "scripts/02_preprocessing/pca_pre.R"
 
 
 # Supplementary panel with the PCA of every region, one row per region
 rule plot_pca_pre:
     input:
-        scores=collect("results/pca_pre/{region}/scores.tsv", region=REGIONS.index),
-        variance=collect("results/pca_pre/{region}/variance.tsv", region=REGIONS.index),
-        association=collect(
-            "results/pca_pre/{region}/covariate_association.tsv", region=REGIONS.index
-        ),
+        scores=per_region(PCAPRE_SCORES),
+        variance=per_region(PCAPRE_VARIANCE),
+        association=per_region(PCAPRE_COVARIATES),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/pca_pre_panel.pdf",
         jpeg="results/plots/supplementary/pca_pre_panel.jpeg",
@@ -261,23 +323,23 @@ rule plot_pca_pre:
     params:
         covariates=config["pca"]["covariates"],
     script:
-        "scripts/plot_pca.R"
+        "scripts/02_preprocessing/plot_pca.R"
 
 
 # Outlier samples of each region (standardized connectivity, sex check). The
 # kept samples are used by both branches: differential expression and networks.
 rule sample_qc:
     input:
-        counts="results/counts/{region}/counts.rds",
-        samples="results/counts/{region}/samples.tsv",
-        factors="results/gc_normalize/{region}/normalization_factors.rds",
-        gene_filter="workflow/scripts/R/gene_filter.R",
-        expression_utils="workflow/scripts/R/expression_utils.R",
+        counts=RAWCOUNTS,
+        samples=RAWMETADATA,
+        factors=GCFACTORS,
+        gene_filter="workflow/scripts/utils/gene_filter.R",
+        expression_utils="workflow/scripts/utils/expression_utils.R",
     output:
-        qc="results/sample_qc/{region}/sample_qc.tsv",
-        kept="results/sample_qc/{region}/samples_kept.tsv",
+        qc=SAMPLEQC,
+        kept=METADATA,
     log:
-        "logs/sample_qc/{region}.log",
+        "logs/sample_qc/{cohort}_{region}.log",
     conda:
         "envs/deseq2.yaml"
     params:
@@ -287,24 +349,27 @@ rule sample_qc:
         max_connectivity_z=config["sample_qc"]["max_connectivity_z"],
         check_sex=config["sample_qc"]["check_sex"],
     script:
-        "scripts/sample_qc.R"
+        "scripts/02_preprocessing/sample_qc.R"
+
+
+# ---- 03. Differential expression --------------------------------------------
 
 
 # One DESeq2 model per region (~ covariates + group, group = diagnosis_sex);
 # every contrast of config.yaml comes from that same fit
 rule deseq2:
     input:
-        counts="results/counts/{region}/counts.rds",
-        samples="results/sample_qc/{region}/samples_kept.tsv",
-        factors="results/gc_normalize/{region}/normalization_factors.rds",
-        gene_filter="workflow/scripts/R/gene_filter.R",
-        expression_utils="workflow/scripts/R/expression_utils.R",
+        counts=RAWCOUNTS,
+        samples=METADATA,
+        factors=GCFACTORS,
+        gene_filter="workflow/scripts/utils/gene_filter.R",
+        expression_utils="workflow/scripts/utils/expression_utils.R",
     output:
-        dds="results/deseq2/{region}/dds.rds",
-        tables=expand("results/deseq2/{{region}}/{contrast}.tsv", contrast=CONTRASTS),
-        summary="results/deseq2/{region}/summary.tsv",
+        dds=DDS,
+        tables=expand(DEGS, contrast=CONTRASTS, allow_missing=True),
+        summary=DEGSUMMARY,
     log:
-        "logs/deseq2/{region}.log",
+        "logs/deseq2/{cohort}_{region}.log",
     conda:
         "envs/deseq2.yaml"
     threads: 4
@@ -316,17 +381,17 @@ rule deseq2:
         min_cpm=config["gene_filter"]["min_cpm"],
         min_fraction=config["gene_filter"]["min_fraction"],
     script:
-        "scripts/deseq2.R"
+        "scripts/03_differential_expression/deseq2.R"
 
 
 # GSEA of one DESeq2 contrast: GO biological process and Reactome
 rule gsea:
     input:
-        table="results/deseq2/{region}/{contrast}.tsv",
+        table=DEGS,
     output:
-        "results/gsea/{region}/{contrast}.tsv",
+        GSEA,
     log:
-        "logs/gsea/{region}/{contrast}.log",
+        "logs/gsea/{cohort}_{region}/{contrast}.log",
     conda:
         "envs/gsea.yaml"
     params:
@@ -334,46 +399,21 @@ rule gsea:
         max_size=config["gsea"]["max_size"],
         seed=config["gsea"]["seed"],
     script:
-        "scripts/gsea.R"
-
-
-# ---- 5. Figure: AD in women vs AD in men -----------------------------------
+        "scripts/03_differential_expression/gsea.R"
 
 
 # Main figure: (a) DEGs per sex, (b) log2FC of AD in women vs in men,
 # (c) NES of AD in women vs in men, colored by the interaction
 rule plot_degs_ad_by_sex:
     input:
-        de_female=collect(
-            "results/deseq2/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["female_contrast"],
-        ),
-        de_male=collect(
-            "results/deseq2/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["male_contrast"],
-        ),
-        gsea_female=collect(
-            "results/gsea/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["female_contrast"],
-        ),
-        gsea_male=collect(
-            "results/gsea/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["male_contrast"],
-        ),
-        gsea_interaction=collect(
-            "results/gsea/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["interaction_contrast"],
-        ),
-        samples=collect(
-            "results/sample_qc/{region}/samples_kept.tsv", region=REGIONS.index
-        ),
+        de_female=per_region(of_contrast(DEGS, "female_contrast")),
+        de_male=per_region(of_contrast(DEGS, "male_contrast")),
+        gsea_female=per_region(of_contrast(GSEA, "female_contrast")),
+        gsea_male=per_region(of_contrast(GSEA, "male_contrast")),
+        gsea_interaction=per_region(of_contrast(GSEA, "interaction_contrast")),
+        samples=per_region(METADATA),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/main/degs_ad_by_sex.pdf",
         jpeg="results/plots/main/degs_ad_by_sex.jpeg",
@@ -385,7 +425,7 @@ rule plot_degs_ad_by_sex:
         collection=config["figures"]["pathways"]["collection"],
         padj=config["figures"]["pathways"]["padj"],
     script:
-        "scripts/plot_degs_ad_by_sex.R"
+        "scripts/03_differential_expression/plot_degs_ad_by_sex.R"
 
 
 # Supplementary figure of the differential expression: (a) volcanos AD vs CT per
@@ -393,28 +433,12 @@ rule plot_degs_ad_by_sex:
 # regions and sexes, (d) top pathways of the interaction
 rule plot_de_supplementary:
     input:
-        de_female=collect(
-            "results/deseq2/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["female_contrast"],
-        ),
-        de_male=collect(
-            "results/deseq2/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["male_contrast"],
-        ),
-        de_interaction=collect(
-            "results/deseq2/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["interaction_contrast"],
-        ),
-        gsea_interaction=collect(
-            "results/gsea/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["interaction_contrast"],
-        ),
+        de_female=per_region(of_contrast(DEGS, "female_contrast")),
+        de_male=per_region(of_contrast(DEGS, "male_contrast")),
+        de_interaction=per_region(of_contrast(DEGS, "interaction_contrast")),
+        gsea_interaction=per_region(of_contrast(GSEA, "interaction_contrast")),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/de_panel.pdf",
         jpeg="results/plots/supplementary/de_panel.jpeg",
@@ -428,24 +452,16 @@ rule plot_de_supplementary:
         padj=config["figures"]["pathways"]["padj"],
         log2fc=config["deseq2"]["log2fc"],
     script:
-        "scripts/plot_de_supplementary.R"
+        "scripts/03_differential_expression/plot_de_supplementary.R"
 
 
 # Supplementary: top pathways of AD in women and in men, one panel per collection
 rule plot_pathways_by_sex:
     input:
-        gsea_female=collect(
-            "results/gsea/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["female_contrast"],
-        ),
-        gsea_male=collect(
-            "results/gsea/{region}/{contrast}.tsv",
-            region=REGIONS.index,
-            contrast=config["figures"]["male_contrast"],
-        ),
+        gsea_female=per_region(of_contrast(GSEA, "female_contrast")),
+        gsea_male=per_region(of_contrast(GSEA, "male_contrast")),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/pathways_by_sex.pdf",
         jpeg="results/plots/supplementary/pathways_by_sex.jpeg",
@@ -458,10 +474,10 @@ rule plot_pathways_by_sex:
         top_n=config["figures"]["pathways"]["top_n"],
         padj=config["figures"]["pathways"]["padj"],
     script:
-        "scripts/plot_pathways_by_sex.R"
+        "scripts/03_differential_expression/plot_pathways_by_sex.R"
 
 
-# ---- 6. Expression matrices for the networks (ARACNe-AP) --------------------
+# ---- 04. Network inference (ARACNe-AP) --------------------------------------
 
 
 # Corrected expression of each region: kept samples, genes expressed in all the
@@ -469,19 +485,19 @@ rule plot_pathways_by_sex:
 # plus the PCA after the correction (tables)
 rule network_qc:
     input:
-        counts="results/counts/{region}/counts.rds",
-        samples="results/sample_qc/{region}/samples_kept.tsv",
-        factors="results/gc_normalize/{region}/normalization_factors.rds",
-        gene_filter="workflow/scripts/R/gene_filter.R",
-        expression_utils="workflow/scripts/R/expression_utils.R",
+        counts=RAWCOUNTS,
+        samples=METADATA,
+        factors=GCFACTORS,
+        gene_filter="workflow/scripts/utils/gene_filter.R",
+        expression_utils="workflow/scripts/utils/expression_utils.R",
     output:
-        expression="results/network_qc/{region}/expression.rds",
-        scores="results/network_qc/{region}/pca_scores.tsv",
-        variance="results/network_qc/{region}/pca_variance.tsv",
-        association="results/network_qc/{region}/pca_covariate_association.tsv",
-        distribution="results/network_qc/{region}/sample_distribution.tsv",
+        expression=MATRIX_ALL,
+        scores=PCAPOST_SCORES,
+        variance=PCAPOST_VARIANCE,
+        association=PCAPOST_COVARIATES,
+        distribution=SAMPLEDIST,
     log:
-        "logs/network_qc/{region}.log",
+        "logs/network_qc/{cohort}_{region}.log",
     conda:
         "envs/deseq2.yaml"
     params:
@@ -492,24 +508,17 @@ rule network_qc:
         n_pcs=config["pca"]["n_pcs"],
         pca_covariates=config["pca"]["covariates"],
     script:
-        "scripts/network_qc.R"
+        "scripts/04_network_inference/network_qc.R"
 
 
 # Supplementary panel with the PCA of every region after the correction
 rule plot_pca_post:
     input:
-        scores=collect(
-            "results/network_qc/{region}/pca_scores.tsv", region=REGIONS.index
-        ),
-        variance=collect(
-            "results/network_qc/{region}/pca_variance.tsv", region=REGIONS.index
-        ),
-        association=collect(
-            "results/network_qc/{region}/pca_covariate_association.tsv",
-            region=REGIONS.index,
-        ),
+        scores=per_region(PCAPOST_SCORES),
+        variance=per_region(PCAPOST_VARIANCE),
+        association=per_region(PCAPOST_COVARIATES),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/pca_post_panel.pdf",
         jpeg="results/plots/supplementary/pca_post_panel.jpeg",
@@ -520,22 +529,18 @@ rule plot_pca_post:
     params:
         covariates=config["pca"]["covariates"],
     script:
-        "scripts/plot_pca.R"
+        "scripts/02_preprocessing/plot_pca.R"
 
 
 # Supplementary panel of sample QC: library size, detected genes, connectivity
 # (outliers) and distribution of every sample before and after the correction
 rule plot_sample_qc:
     input:
-        sample_qc=collect(
-            "results/sample_qc/{region}/sample_qc.tsv", region=REGIONS.index
-        ),
-        distribution=collect(
-            "results/network_qc/{region}/sample_distribution.tsv", region=REGIONS.index
-        ),
-        bias=collect("results/gc_normalize/{region}/bias.tsv", region=REGIONS.index),
+        sample_qc=per_region(SAMPLEQC),
+        distribution=per_region(SAMPLEDIST),
+        bias=per_region(GCBIAS),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/sample_qc_panel.pdf",
         jpeg="results/plots/supplementary/sample_qc_panel.jpeg",
@@ -546,27 +551,26 @@ rule plot_sample_qc:
     params:
         max_connectivity_z=config["sample_qc"]["max_connectivity_z"],
     script:
-        "scripts/plot_sample_qc.R"
+        "scripts/04_network_inference/plot_sample_qc.R"
 
 
-# One expression matrix per group (diagnosis x sex), the input of ARACNe-AP
+# One expression matrix per group (diagnosis x sex), the input of ARACNe-AP,
+# and the metadata of the samples of each group
 rule split_groups:
     input:
-        expression="results/network_qc/{region}/expression.rds",
-        samples="results/sample_qc/{region}/samples_kept.tsv",
+        expression=MATRIX_ALL,
+        samples=METADATA,
     output:
-        matrices=expand("results/network_input/{{region}}/{group}.tsv", group=GROUPS),
+        matrices=expand(MATRIX, group=GROUPS, allow_missing=True),
+        metadata=expand(METADATA_GROUP, group=GROUPS, allow_missing=True),
     log:
-        "logs/split_groups/{region}.log",
+        "logs/split_groups/{cohort}_{region}.log",
     conda:
         "envs/r_tidy.yaml"
     params:
         groups=GROUPS,
     script:
-        "scripts/split_groups.R"
-
-
-# ---- 7. Networks with ARACNe-AP ---------------------------------------------
+        "scripts/04_network_inference/split_groups.R"
 
 
 # Download ARACNe-AP at a fixed commit and build the jar (JDK + ant)
@@ -594,11 +598,11 @@ rule install_aracne:
 # 4 groups of a region share the same genes, so one list per region)
 rule aracne_regulators:
     input:
-        f"results/network_input/{{region}}/{GROUPS[0]}.tsv",
+        MATRIX.replace("{group}", GROUPS[0]),
     output:
-        "results/aracne/{region}/regulators.txt",
+        REGULATORS,
     log:
-        "logs/aracne/{region}/regulators.log",
+        "logs/aracne/{cohort}_{region}/regulators.log",
     conda:
         "envs/aracne.yaml"
     shell:
@@ -608,14 +612,14 @@ rule aracne_regulators:
 # ARACNe-AP. Step 1: MI threshold. Output: folder with miThreshold_p<pvalue>_samples<N>.txt
 rule aracne_threshold:
     input:
-        matrix="results/network_input/{region}/{group}.tsv",
-        regulators="results/aracne/{region}/regulators.txt",
+        matrix=MATRIX,
+        regulators=REGULATORS,
         # ancient(): rebuilding the jar must not make the networks rerun
         jar=ancient(config["aracne"]["jar"]),
     output:
-        directory("results/aracne/{region}/{group}/threshold"),
+        directory("results/04_network_inference/{region}/aracne_{cohort}_{region}_{group}/threshold"),
     log:
-        "logs/aracne/{region}/{group}/threshold.log",
+        "logs/aracne/{cohort}_{region}/{group}/threshold.log",
     conda:
         "envs/aracne.yaml"
     resources:
@@ -635,23 +639,21 @@ rule aracne_threshold:
 # ARACNe-AP. Step 2: one bootstrap per seed
 rule aracne_bootstrap:
     input:
-        matrix="results/network_input/{region}/{group}.tsv",
-        regulators="results/aracne/{region}/regulators.txt",
-        threshold="results/aracne/{region}/{group}/threshold",
+        matrix=MATRIX,
+        regulators=REGULATORS,
+        threshold="results/04_network_inference/{region}/aracne_{cohort}_{region}_{group}/threshold",
         # ancient(): rebuilding the jar must not make the networks rerun
         jar=ancient(config["aracne"]["jar"]),
     output:
         # ARACNe's working folder for this seed. After the mv it only holds a copy of
         # the threshold file, so temp() lets Snakemake delete it when the job ends
-        work=temp(directory("results/aracne/{region}/{group}/bootstraps/seed{seed}")),
+        work=temp(directory("results/04_network_inference/{region}/aracne_{cohort}_{region}_{group}/bootstraps/seed{seed}")),
         # ARACNe names its output with a random ID; we rename it with the seed so the
         # name is known in advance and the consolidate step can request it by expand.
         # temp(): deleted once the network is consolidated
-        network=temp(
-            "results/aracne/{region}/{group}/bootstrap_networks/bootstrapNetwork_seed{seed}.txt"
-        ),
+        network=temp("results/04_network_inference/{region}/aracne_{cohort}_{region}_{group}/bootstrap_networks/bootstrapNetwork_seed{seed}.txt"),
     log:
-        "logs/aracne/{region}/{group}/bootstrap_seed{seed}.log",
+        "logs/aracne/{cohort}_{region}/{group}/bootstrap_seed{seed}.log",
     conda:
         "envs/aracne.yaml"
     threads: config["aracne"]["bootstrap"]["threads"]
@@ -679,22 +681,21 @@ rule aracne_consolidate:
     input:
         # One file per seed, already together in bootstrap_networks/
         bootstraps=expand(
-            "results/aracne/{{region}}/{{group}}/bootstrap_networks/bootstrapNetwork_seed{seed}.txt",
+            "results/04_network_inference/{region}/aracne_{cohort}_{region}_{group}/bootstrap_networks/bootstrapNetwork_seed{seed}.txt",
             # int(): a value given with --config arrives as text
             seed=range(1, int(config["aracne"]["bootstrap"]["n_boot"]) + 1),
+            allow_missing=True,
         ),
         # ancient(): rebuilding the jar must not make the networks rerun
         jar=ancient(config["aracne"]["jar"]),
     output:
         # ARACNe writes network.txt inside the folder it consolidates.
         # temp(): it is an identical copy of the final network below
-        consolidated=temp(
-            "results/aracne/{region}/{group}/bootstrap_networks/network.txt"
-        ),
-        # Final network (kept)
-        network="results/aracne/{region}/{group}/network.txt",
+        consolidated=temp("results/04_network_inference/{region}/aracne_{cohort}_{region}_{group}/bootstrap_networks/network.txt"),
+        # Final network (kept): Regulator, Target, MI, pvalue
+        network=NETWORK,
     log:
-        "logs/aracne/{region}/{group}/consolidate.log",
+        "logs/aracne/{cohort}_{region}/{group}/consolidate.log",
     conda:
         "envs/aracne.yaml"
     resources:
@@ -707,36 +708,36 @@ rule aracne_consolidate:
         """
 
 
-# ---- 8. Analysis of the networks --------------------------------------------
+# ---- 05. Network topology ---------------------------------------------------
 
 
 # Topology of one network, and degree, PageRank and Leiden community of its genes
 rule network_metrics:
     input:
-        network="results/aracne/{region}/{group}/network.txt",
-        network_utils="workflow/scripts/R/network_utils.R",
+        network=NETWORK,
+        network_utils="workflow/scripts/utils/network_utils.R",
     output:
-        metrics="results/network_analysis/{region}/{group}/metrics.tsv",
-        nodes="results/network_analysis/{region}/{group}/nodes.tsv",
+        metrics=NETMETRICS,
+        nodes=NETNODES,
     log:
-        "logs/network_analysis/{region}/{group}/metrics.log",
+        "logs/network_analysis/{cohort}_{region}/{group}/metrics.log",
     conda:
         "envs/network_analysis.yaml"
     params:
         resolution=config["network_analysis"]["communities"]["resolution"],
         seed=config["network_analysis"]["communities"]["seed"],
     script:
-        "scripts/network_metrics.R"
+        "scripts/05_network_topology/network_metrics.R"
 
 
 # GO BP and Reactome over-representation in every community of one network
 rule community_enrichment:
     input:
-        nodes="results/network_analysis/{region}/{group}/nodes.tsv",
+        nodes=NETNODES,
     output:
-        "results/network_analysis/{region}/{group}/community_enrichment.tsv",
+        COMMENRICH,
     log:
-        "logs/network_analysis/{region}/{group}/community_enrichment.log",
+        "logs/network_analysis/{cohort}_{region}/{group}/community_enrichment.log",
     conda:
         "envs/gsea.yaml"
     params:
@@ -747,164 +748,18 @@ rule community_enrichment:
         max_size=config["network_analysis"]["community_enrichment"]["max_size"],
         padj=config["network_analysis"]["community_enrichment"]["padj"],
     script:
-        "scripts/community_enrichment.R"
-
-
-# The 4 networks of one region compared pair by pair (Jaccard of edges and
-# nodes, Spearman of degree, NMI of communities) and convergence/divergence index
-rule network_comparison:
-    input:
-        networks=expand("results/aracne/{{region}}/{group}/network.txt", group=GROUPS),
-        nodes=expand(
-            "results/network_analysis/{{region}}/{group}/nodes.tsv", group=GROUPS
-        ),
-        samples="results/sample_qc/{region}/samples_kept.tsv",
-        network_utils="workflow/scripts/R/network_utils.R",
-    output:
-        pairs="results/network_analysis/{region}/comparison_pairs.tsv",
-        convergence="results/network_analysis/{region}/convergence_index.tsv",
-    log:
-        "logs/network_analysis/{region}/comparison.log",
-    conda:
-        "envs/network_analysis.yaml"
-    params:
-        groups=GROUPS,
-    script:
-        "scripts/network_comparison.R"
-
-
-# Rewiring of every gene by AD in women and in men, and rewired genes x DEGs
-rule gene_rewiring:
-    input:
-        networks=expand("results/aracne/{{region}}/{group}/network.txt", group=GROUPS),
-        regulators="results/aracne/{region}/regulators.txt",
-        de_female=f"results/deseq2/{{region}}/{config['figures']['female_contrast']}.tsv",
-        de_male=f"results/deseq2/{{region}}/{config['figures']['male_contrast']}.tsv",
-        de_interaction=f"results/deseq2/{{region}}/{config['figures']['interaction_contrast']}.tsv",
-        network_utils="workflow/scripts/R/network_utils.R",
-        overlap_utils="workflow/scripts/R/overlap_utils.R",
-    output:
-        genes="results/network_analysis/{region}/gene_rewiring.tsv",
-        tests="results/network_analysis/{region}/rewiring_vs_de.tsv",
-    log:
-        "logs/network_analysis/{region}/gene_rewiring.log",
-    conda:
-        "envs/network_analysis.yaml"
-    params:
-        groups=GROUPS,
-        min_degree=config["network_analysis"]["rewiring"]["min_degree"],
-        top_rewired=config["network_analysis"]["rewiring"]["top_rewired"],
-        sensitivity=config["network_analysis"]["rewiring"]["sensitivity"],
-        n_perm=config["network_analysis"]["rewiring"]["n_perm"],
-        strata=config["network_analysis"]["rewiring"]["strata"],
-        seed=config["network_analysis"]["rewiring"]["seed"],
-    script:
-        "scripts/gene_rewiring.R"
-
-
-# Function of the genes rewired in women only, in men only and in both
-rule rewiring_enrichment:
-    input:
-        genes="results/network_analysis/{region}/gene_rewiring.tsv",
-    output:
-        "results/network_analysis/{region}/rewiring_enrichment.tsv",
-    log:
-        "logs/network_analysis/{region}/rewiring_enrichment.log",
-    conda:
-        "envs/gsea.yaml"
-    params:
-        min_size=config["network_analysis"]["rewiring_enrichment"]["min_size"],
-        max_size=config["network_analysis"]["rewiring_enrichment"]["max_size"],
-        padj=config["network_analysis"]["rewiring_enrichment"]["padj"],
-    script:
-        "scripts/rewiring_enrichment.R"
-
-
-# ---- 9. Figures of the networks ---------------------------------------------
-
-
-# Main figure: (a) rewiring in women vs in men, (b) rewired genes x DEGs,
-# (c) function of the genes rewired in one sex only, (d) convergence/divergence
-# index, (e) edge Jaccard AD vs CT per sex
-rule plot_networks_by_sex:
-    input:
-        convergence=collect(
-            "results/network_analysis/{region}/convergence_index.tsv",
-            region=REGIONS.index,
-        ),
-        pairs=collect(
-            "results/network_analysis/{region}/comparison_pairs.tsv",
-            region=REGIONS.index,
-        ),
-        genes=collect(
-            "results/network_analysis/{region}/gene_rewiring.tsv", region=REGIONS.index
-        ),
-        tests=collect(
-            "results/network_analysis/{region}/rewiring_vs_de.tsv", region=REGIONS.index
-        ),
-        enrichment=collect(
-            "results/network_analysis/{region}/rewiring_enrichment.tsv",
-            region=REGIONS.index,
-        ),
-        regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
-    output:
-        pdf="results/plots/main/networks_ad_by_sex.pdf",
-        jpeg="results/plots/main/networks_ad_by_sex.jpeg",
-    log:
-        "logs/plot_networks_by_sex.log",
-    conda:
-        "envs/plots_r.yaml"
-    params:
-        collection=config["network_figures"]["collection"],
-        top_terms=config["network_figures"]["top_terms"],
-    script:
-        "scripts/plot_networks_by_sex.R"
-
-
-# Supplementary: (a) every pair of networks with every measure,
-# (b) sensitivity of the rewired x DEG overlap
-rule plot_networks_supplementary:
-    input:
-        pairs=collect(
-            "results/network_analysis/{region}/comparison_pairs.tsv",
-            region=REGIONS.index,
-        ),
-        tests=collect(
-            "results/network_analysis/{region}/rewiring_vs_de.tsv", region=REGIONS.index
-        ),
-        regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
-    output:
-        pdf="results/plots/supplementary/networks_panel.pdf",
-        jpeg="results/plots/supplementary/networks_panel.jpeg",
-    log:
-        "logs/plot_networks_supplementary.log",
-    conda:
-        "envs/plots_r.yaml"
-    script:
-        "scripts/plot_networks_supplementary.R"
+        "scripts/05_network_topology/community_enrichment.R"
 
 
 # Supplementary: topology of the 20 networks (metrics, degree distributions,
 # edges vs number of samples)
 rule plot_network_topology:
     input:
-        metrics=collect(
-            "results/network_analysis/{region}/{group}/metrics.tsv",
-            region=REGIONS.index,
-            group=GROUPS,
-        ),
-        nodes=collect(
-            "results/network_analysis/{region}/{group}/nodes.tsv",
-            region=REGIONS.index,
-            group=GROUPS,
-        ),
-        samples=collect(
-            "results/sample_qc/{region}/samples_kept.tsv", region=REGIONS.index
-        ),
+        metrics=per_region(NETMETRICS, group=GROUPS),
+        nodes=per_region(NETNODES, group=GROUPS),
+        samples=per_region(METADATA),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/network_topology_panel.pdf",
         jpeg="results/plots/supplementary/network_topology_panel.jpeg",
@@ -913,19 +768,15 @@ rule plot_network_topology:
     conda:
         "envs/plots_r.yaml"
     script:
-        "scripts/plot_network_topology.R"
+        "scripts/05_network_topology/plot_network_topology.R"
 
 
 # Supplementary: main function of the largest communities of the 20 networks
 rule plot_community_enrichment:
     input:
-        enrichment=collect(
-            "results/network_analysis/{region}/{group}/community_enrichment.tsv",
-            region=REGIONS.index,
-            group=GROUPS,
-        ),
+        enrichment=per_region(COMMENRICH, group=GROUPS),
         regions=config["samples"],
-        theme="workflow/scripts/R/theme_pub.R",
+        theme=THEME,
     output:
         pdf="results/plots/supplementary/community_enrichment_panel.pdf",
         jpeg="results/plots/supplementary/community_enrichment_panel.jpeg",
@@ -937,4 +788,120 @@ rule plot_community_enrichment:
         collection=config["network_figures"]["collection"],
         top_communities=config["network_figures"]["top_communities"],
     script:
-        "scripts/plot_community_enrichment.R"
+        "scripts/05_network_topology/plot_community_enrichment.R"
+
+
+# ---- 06. Network comparison -------------------------------------------------
+
+
+# The 4 networks of one region compared pair by pair (Jaccard of edges and
+# nodes, Spearman of degree, NMI of communities) and convergence/divergence index
+rule network_comparison:
+    input:
+        networks=expand(NETWORK, group=GROUPS, allow_missing=True),
+        nodes=expand(NETNODES, group=GROUPS, allow_missing=True),
+        samples=METADATA,
+        network_utils="workflow/scripts/utils/network_utils.R",
+    output:
+        pairs=NETPAIRS,
+        convergence=CONVERGENCE,
+    log:
+        "logs/network_analysis/{cohort}_{region}/comparison.log",
+    conda:
+        "envs/network_analysis.yaml"
+    params:
+        groups=GROUPS,
+    script:
+        "scripts/06_network_comparison/network_comparison.R"
+
+
+# Rewiring of every gene by AD in women and in men, and rewired genes x DEGs
+rule gene_rewiring:
+    input:
+        networks=expand(NETWORK, group=GROUPS, allow_missing=True),
+        regulators=REGULATORS,
+        de_female=of_contrast(DEGS, "female_contrast"),
+        de_male=of_contrast(DEGS, "male_contrast"),
+        de_interaction=of_contrast(DEGS, "interaction_contrast"),
+        network_utils="workflow/scripts/utils/network_utils.R",
+        overlap_utils="workflow/scripts/utils/overlap_utils.R",
+    output:
+        genes=REWIRING,
+        tests=REWIRINGVSDEG,
+    log:
+        "logs/network_analysis/{cohort}_{region}/gene_rewiring.log",
+    conda:
+        "envs/network_analysis.yaml"
+    params:
+        groups=GROUPS,
+        min_degree=config["network_analysis"]["rewiring"]["min_degree"],
+        top_rewired=config["network_analysis"]["rewiring"]["top_rewired"],
+        sensitivity=config["network_analysis"]["rewiring"]["sensitivity"],
+        n_perm=config["network_analysis"]["rewiring"]["n_perm"],
+        strata=config["network_analysis"]["rewiring"]["strata"],
+        seed=config["network_analysis"]["rewiring"]["seed"],
+    script:
+        "scripts/06_network_comparison/gene_rewiring.R"
+
+
+# Function of the genes rewired in women only, in men only and in both
+rule rewiring_enrichment:
+    input:
+        genes=REWIRING,
+    output:
+        REWIRINGENRICH,
+    log:
+        "logs/network_analysis/{cohort}_{region}/rewiring_enrichment.log",
+    conda:
+        "envs/gsea.yaml"
+    params:
+        min_size=config["network_analysis"]["rewiring_enrichment"]["min_size"],
+        max_size=config["network_analysis"]["rewiring_enrichment"]["max_size"],
+        padj=config["network_analysis"]["rewiring_enrichment"]["padj"],
+    script:
+        "scripts/06_network_comparison/rewiring_enrichment.R"
+
+
+# Main figure: (a) edge Jaccard AD vs CT per sex, (b) convergence/divergence
+# index, (c) rewiring in women vs in men, (d) rewired genes x DEGs,
+# (e) function of the genes rewired in one sex only
+rule plot_networks_by_sex:
+    input:
+        convergence=per_region(CONVERGENCE),
+        pairs=per_region(NETPAIRS),
+        genes=per_region(REWIRING),
+        tests=per_region(REWIRINGVSDEG),
+        enrichment=per_region(REWIRINGENRICH),
+        regions=config["samples"],
+        theme=THEME,
+    output:
+        pdf="results/plots/main/networks_ad_by_sex.pdf",
+        jpeg="results/plots/main/networks_ad_by_sex.jpeg",
+    log:
+        "logs/plot_networks_by_sex.log",
+    conda:
+        "envs/plots_r.yaml"
+    params:
+        collection=config["network_figures"]["collection"],
+        top_terms=config["network_figures"]["top_terms"],
+    script:
+        "scripts/06_network_comparison/plot_networks_by_sex.R"
+
+
+# Supplementary: (a-d) every pair of networks, one measure each,
+# (e) sensitivity of the rewired x DEG overlap
+rule plot_networks_supplementary:
+    input:
+        pairs=per_region(NETPAIRS),
+        tests=per_region(REWIRINGVSDEG),
+        regions=config["samples"],
+        theme=THEME,
+    output:
+        pdf="results/plots/supplementary/networks_panel.pdf",
+        jpeg="results/plots/supplementary/networks_panel.jpeg",
+    log:
+        "logs/plot_networks_supplementary.log",
+    conda:
+        "envs/plots_r.yaml"
+    script:
+        "scripts/06_network_comparison/plot_networks_supplementary.R"

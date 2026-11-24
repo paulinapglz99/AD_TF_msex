@@ -6,7 +6,7 @@ qué se grafica y cómo leerlo, no qué se encontró.
 
 Todas las figuras se guardan en `results/plots/main/` (figuras principales) o `results/plots/supplementary/`
 (suplementarias), en PDF (vectorial) y JPEG a 600 dpi, al ancho de doble columna. Los colores, tipografía, tamaños y el
-orden de regiones y grupos vienen de [workflow/scripts/R/theme_pub.R](workflow/scripts/R/theme_pub.R).
+orden de regiones y grupos vienen de [workflow/scripts/utils/theme_pub.R](../workflow/scripts/utils/theme_pub.R).
 
 ## Convenciones comunes
 
@@ -37,7 +37,7 @@ Reglas de composición:
 
 ### Figura 1. Expresión diferencial de AD en mujeres y hombres (`main/degs_ad_by_sex`)
 
-Script: [plot_degs_ad_by_sex.R](workflow/scripts/plot_degs_ad_by_sex.R). Pregunta: ¿AD cambia la expresión igual en
+Script: [plot_degs_ad_by_sex.R](../workflow/scripts/03_differential_expression/plot_degs_ad_by_sex.R). Pregunta: ¿AD cambia la expresión igual en
 mujeres y en hombres?
 
 | Panel | Qué muestra | Diseño |
@@ -64,7 +64,7 @@ cortex; CRB, cerebellum.
 
 ### Figura 2. Recableado de las redes de co-expresión por AD en mujeres y hombres (`main/networks_ad_by_sex`)
 
-Script: [plot_networks_by_sex.R](workflow/scripts/plot_networks_by_sex.R). Pregunta: ¿AD reorganiza igual las redes de
+Script: [plot_networks_by_sex.R](../workflow/scripts/06_network_comparison/plot_networks_by_sex.R). Pregunta: ¿AD reorganiza igual las redes de
 mujeres y hombres? Va de lo global (la red) al gen y luego a la función.
 
 | Panel | Qué muestra | Diseño |
@@ -79,7 +79,7 @@ Leyendas: Sexo (en a; d usa los mismos colores), convergencia (b), "Rewired by A
 
 **Pie propuesto.**
 **Figure 2. Rewiring of the gene co-expression networks by Alzheimer's disease in women and men.**
-Networks were inferred with ARACNe-AP (p < 10⁻⁸, 100 bootstraps, all genes as candidate regulators), one for each
+Networks were inferred with ARACNe-AP (p < 10⁻⁸, 150 bootstraps, all genes as candidate regulators), one for each
 region, sex and diagnosis.
 (a) Edge Jaccard index between the AD and control networks of each sex. Lower values mean more rewiring. Numbers under
 each point are the AD/control samples. Networks with more samples have more edges, so differences between sexes partly
@@ -104,7 +104,7 @@ are shown.
 
 ### S1. Metadata de las muestras (`supplementary/metadata_panel`)
 
-Script: [0.1plot_metadatas.R](workflow/scripts/0.1plot_metadatas.R).
+Script: [plot_metadata.R](../workflow/scripts/01_metadata/plot_metadata.R).
 
 | Panel | Qué muestra |
 |---|---|
@@ -128,7 +128,7 @@ AD (cogdx 4), Braak ≥ 4 and CERAD ≤ 2. Controls require no cognitive impairm
 
 ### S2. Control de calidad de las muestras (`supplementary/sample_qc_panel`)
 
-Script: [plot_sample_qc.R](workflow/scripts/plot_sample_qc.R).
+Script: [plot_sample_qc.R](../workflow/scripts/04_network_inference/plot_sample_qc.R).
 
 | Panel | Qué muestra |
 |---|---|
@@ -155,7 +155,7 @@ interquartile range; point, median.
 
 ### S3 y S4. PCA antes y después del control de calidad (`supplementary/pca_pre_panel`, `supplementary/pca_post_panel`)
 
-Script: [plot_pca.R](workflow/scripts/plot_pca.R). El mismo diseño para las dos figuras: una fila por región.
+Script: [plot_pca.R](../workflow/scripts/02_preprocessing/plot_pca.R). El mismo diseño para las dos figuras: una fila por región.
 
 | Panel | Qué muestra |
 |---|---|
@@ -180,7 +180,7 @@ technical covariates."*
 
 ### S5. Expresión diferencial, detalle (`supplementary/de_panel`)
 
-Script: [plot_de_supplementary.R](workflow/scripts/plot_de_supplementary.R).
+Script: [plot_de_supplementary.R](../workflow/scripts/03_differential_expression/plot_de_supplementary.R).
 
 | Panel | Qué muestra |
 |---|---|
@@ -203,7 +203,7 @@ BH-adjusted p < 0.05 and |log2FC| ≥ log2(1.2).
 
 ### S6. Vías de AD por sexo (`supplementary/pathways_by_sex`)
 
-Script: [plot_pathways_by_sex.R](workflow/scripts/plot_pathways_by_sex.R).
+Script: [plot_pathways_by_sex.R](../workflow/scripts/03_differential_expression/plot_pathways_by_sex.R).
 
 | Panel | Qué muestra |
 |---|---|
@@ -221,7 +221,7 @@ blue, down); size, −log10(BH-adjusted p); faded points are not significant.
 
 ### S7. Topología de las 20 redes (`supplementary/network_topology_panel`)
 
-Script: [plot_network_topology.R](workflow/scripts/plot_network_topology.R). Color = sexo, vacío = control, lleno = AD
+Script: [plot_network_topology.R](../workflow/scripts/05_network_topology/plot_network_topology.R). Color = sexo, vacío = control, lleno = AD
 en todos los paneles; una sola leyenda.
 
 | Panel | Qué muestra | Diseño |
@@ -241,7 +241,7 @@ have more edges, so comparisons between networks combine biological differences 
 
 ### S8. Comparación de las redes (`supplementary/networks_panel`)
 
-Script: [plot_networks_supplementary.R](workflow/scripts/plot_networks_supplementary.R).
+Script: [plot_networks_supplementary.R](../workflow/scripts/06_network_comparison/plot_networks_supplementary.R).
 
 | Panel | Qué muestra | Diseño |
 |---|---|---|
@@ -264,7 +264,7 @@ filled points) or 20% most rewired genes are called rewired.
 
 ### S9. Función de las comunidades principales (`supplementary/community_enrichment_panel`)
 
-Script: [plot_community_enrichment.R](workflow/scripts/plot_community_enrichment.R). Un solo panel, sin letra.
+Script: [plot_community_enrichment.R](../workflow/scripts/05_network_topology/plot_community_enrichment.R). Un solo panel, sin letra.
 
 - **Filas:** el término más significativo de cada una de las 5 comunidades más grandes de cada red, ordenados por
   similitud de su patrón (clustering jerárquico).

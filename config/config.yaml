@@ -74,9 +74,10 @@ deseq2:
   padj: 0.05
   log2fc: 0.263 # log2(1.2), Sage's threshold
   contrasts:
-    AD_vs_CT_female: {AD_female: 1, CT_female: -1}
-    AD_vs_CT_male: {AD_male: 1, CT_male: -1}
-    sex_diagnosis_interaction: {AD_female: 1, AD_male: -1, CT_female: -1, CT_male: 1}
+    # The name ends every file of the contrast, e.g. degs_ROSMAP_DLPFC_ADvsCT_female.tsv
+    ADvsCT_female: {AD_female: 1, CT_female: -1}
+    ADvsCT_male: {AD_male: 1, CT_male: -1}
+    sexXdx: {AD_female: 1, AD_male: -1, CT_female: -1, CT_male: 1} # sex x diagnosis interaction
 
 # Gene set enrichment (GSEA) of every DESeq2 contrast: all tested genes ranked by
 # the Wald statistic ('stat'), with GO biological process and Reactome.
@@ -89,9 +90,9 @@ gsea:
 # Main figures comparing the effect of AD in women and in men
 figures:
   # DESeq2 contrasts (names in deseq2/contrasts) used as "AD in women" and "AD in men"
-  female_contrast: AD_vs_CT_female
-  male_contrast: AD_vs_CT_male
-  interaction_contrast: sex_diagnosis_interaction
+  female_contrast: ADvsCT_female
+  male_contrast: ADvsCT_male
+  interaction_contrast: sexXdx
   pathways:
     collection: Reactome # GO_BP or Reactome: main figure (panel c) and interaction pathways
     supplementary_collections: [Reactome, GO_BP] # one panel each in pathways_by_sex
@@ -102,12 +103,13 @@ figures:
 # (diagnosis x sex). Every gene of the matrix is a regulator.
 # For a quick test with fewer bootstraps, without editing this file:
 #   snakemake ... --config 'aracne={"bootstrap": {"n_boot": 1}}'
+# (with 1 bootstrap the consolidated network has no edges: it only tests that it runs)
 aracne:
   commit: 30967ea10494fcb42c2bfd00604c94907da5397b # last commit (2018-04-12)
   jar: resources/aracne/aracne.jar
   pvalue: "1E-8" # p-value of the MI threshold (step 1 and bootstraps)
   bootstrap:
-    n_boot: 100 # bootstraps per network
+    n_boot: 150 # bootstraps per network
     threads: 4 # threads of each bootstrap job
   memory: # GB per job; lower them with --set-resources on a small computer
     threshold_gb: 8

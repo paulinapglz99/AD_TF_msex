@@ -1,4 +1,4 @@
-# 0.1plot_metadatas.R
+# plot_metadata.R
 # Supplementary figure with the sample metadata of the five brain regions:
 #   a  Samples per region, diagnosis and sex
 #   b  Proportion of women and men per region and diagnosis
@@ -6,7 +6,7 @@
 #   d  Sex check: XIST vs UTY expression in every sample
 # Diagnosis (AD / CT) is Sage's harmonized 'diagnosis' column from the
 # *_Covariates_ages_censored.tsv files, the same variable used in the rest of the workflow.
-# Colors, fonts, group order and sizes come from scripts/R/theme_pub.R.
+# Colors, fonts, group order and sizes come from scripts/utils/theme_pub.R.
 # Run by Snakemake (rule plot_metadata).
 
 log_con <- file(snakemake@log[[1]], open = "wt")
