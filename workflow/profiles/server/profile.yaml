@@ -1,0 +1,45 @@
+# Profile for the server: 16 cores and 128 GB of RAM, jobs run directly (no
+# queue). Use it with:  snakemake --workflow-profile workflow/profiles/server ...
+# Same as profiles/default, plus: cores, total memory limit, keep going after a
+# failed job, and a wait for files written on a network filesystem.
+# ARACNe uses the memory of config.yaml (aracne/memory) and 4 threads per
+# bootstrap (aracne/bootstrap/threads), so 4 bootstraps run at a time.
+software-deployment-method:
+  - conda
+printshellcmds: true
+rerun-incomplete: true
+keep-going: true
+cores: 16
+resources:
+  mem_gb: 120 # never run jobs whose memory adds up to more than this (8 GB left for the system)
+latency-wait: 60 # seconds to wait for an output file to appear (network filesystems)
+
+default-resources:
+  mem_gb: 2
+set-resources:
+  plot_metadata:
+    mem_gb: 4 # reads the XIST/UTY rows of every count matrix
+  prepare_counts:
+    mem_gb: 4
+  gc_normalize:
+    mem_gb: 4
+  sample_qc:
+    mem_gb: 4
+  deseq2:
+    mem_gb: 6
+  pca_pre:
+    mem_gb: 4
+  network_qc:
+    mem_gb: 4
+  gsea:
+    mem_gb: 4 # loads the whole GO annotation
+  community_enrichment:
+    mem_gb: 4
+  rewiring_enrichment:
+    mem_gb: 4 # loads the whole GO annotation
+  network_metrics:
+    mem_gb: 4
+  network_comparison:
+    mem_gb: 6 # the 4 networks of a region at once
+  gene_rewiring:
+    mem_gb: 6
