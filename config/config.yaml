@@ -1,0 +1,140 @@
+# Brain regions analysed. The row order is the order of the regions in every plot.
+# Columns:
+#   region             short name used in file names
+#   study              ROSMAP or Mayo
+#   tissue             value of 'tissue' in the RNAseq_Harmonization_*_combined_metadata.csv
+#   covariates_tissue  value of 'tissue' in Sage's *_Covariates_ages_censored.tsv
+#                      (Sage calls the head of caudate nucleus "ACC")
+#   batch_column       column of the covariates with the sequencing batch
+samples: config/samples.tsv
+
+# Table of Synapse files to download.
+# Columns: syn_id, version, category (data | metadata), study, filename, description
+synapse_files: config/synapse_files.tsv
+
+# Diagnosis groups to keep: values of Sage's harmonized 'diagnosis' column
+# (ROSMAP: AD, CT, OTHER; Mayo: AD, CT, PSP, PATH_AGE)
+diagnoses: [AD, CT]
+
+# Sequencing batches (Sage's final_batch in ROSMAP, flowcell in Mayo) with fewer
+# samples than this are merged into the largest batch of the same protocol
+# (library prep + kit). The result is the 'model_batch' column.
+min_batch_size: 5
+
+# Gene annotation for the GC and length correction (rules gene_annotation,
+# gc_normalize): GC content and length of every gene from a FIXED Ensembl archive.
+# Ensembl 106 (Apr 2022) is the oldest archive still online, the closest to the
+# GENCODE version of Sage's counts.
+annotation:
+  ensembl_host: https://apr2022.archive.ensembl.org
+  file: resources/annotation/ensembl106_genes.tsv
+
+# Outlier samples (rule sample_qc), removed from both branches (DE and networks).
+# Standardized connectivity (Oldham et al. 2012) on the corrected expression:
+# samples with z below max_connectivity_z are unlike the rest.
+sample_qc:
+  max_connectivity_z: -3
+  check_sex: true # also remove samples whose sex by XIST/UTY does not match the annotation
+
+# Genes kept for the PCA and the differential expression (Sage's criterion):
+# CPM > min_cpm in at least min_fraction of the samples of at least one group
+# (group = diagnosis_sex)
+gene_filter:
+  min_cpm: 1
+  min_fraction: 0.5
+
+# PCA of each region before any correction (rules pca_pre, plot_pca_pre),
+# used to choose the covariates of the DESeq2 model
+pca:
+  top_genes: 1000 # most variable genes after the variance stabilizing transformation
+  n_pcs: 10 # principal components tested against the covariates
+  covariates:
+    - diagnosis
+    - sex
+    - protocol
+    - model_batch
+    - RIN
+    - pmi
+    - age_death
+    - pct_aligned
+    - pct_intronic
+    - pct_intergenic
+    - pct_coding
+    - apoe4_allele
+
+# Differential expression with DESeq2. One model per region:
+#   ~ <covariates> + group, with group = diagnosis_sex
+# Covariates chosen with the PCA (results/plots/supplementary/pca_pre_panel.pdf).
+# Mayo has no model_batch: its flowcells are not associated with any PC.
+# Each contrast gives the weight of each group: numerator +1, denominator -1.
+deseq2:
+  covariates:
+    ROSMAP: [model_batch, RIN, pct_intronic, pmi, age_death]
+    Mayo: [RIN, pct_intronic, pmi, age_death]
+  padj: 0.05
+  log2fc: 0.263 # log2(1.2), Sage's threshold
+  contrasts:
+    AD_vs_CT_female: {AD_female: 1, CT_female: -1}
+    AD_vs_CT_male: {AD_male: 1, CT_male: -1}
+    sex_diagnosis_interaction: {AD_female: 1, AD_male: -1, CT_female: -1, CT_male: 1}
+
+# Gene set enrichment (GSEA) of every DESeq2 contrast: all tested genes ranked by
+# the Wald statistic ('stat'), with GO biological process and Reactome.
+# Every gene set is kept (significant or not), so NES can be compared between contrasts.
+gsea:
+  min_size: 15 # smallest gene set
+  max_size: 500 # largest gene set
+  seed: 2026 # GSEA p-values come from permutations: fixed seed, same result every run
+
+# Main figures comparing the effect of AD in women and in men
+figures:
+  # DESeq2 contrasts (names in deseq2/contrasts) used as "AD in women" and "AD in men"
+  female_contrast: AD_vs_CT_female
+  male_contrast: AD_vs_CT_male
+  interaction_contrast: sex_diagnosis_interaction
+  pathways:
+    collection: Reactome # GO_BP or Reactome: main figure (panel c) and interaction pathways
+    supplementary_collections: [Reactome, GO_BP] # one panel each in pathways_by_sex
+    top_n: 5 # dot plots: pathways with the largest |NES| per region and sex (lowered if they do not fit)
+    padj: 0.05
+
+# Co-expression networks with ARACNe-AP: one network per region x group
+# (diagnosis x sex). Every gene of the matrix is a regulator.
+# For a quick test with fewer bootstraps, without editing this file:
+#   snakemake ... --config 'aracne={"bootstrap": {"n_boot": 1}}'
+aracne:
+  commit: 30967ea10494fcb42c2bfd00604c94907da5397b # last commit (2018-04-12)
+  jar: resources/aracne/aracne.jar
+  pvalue: "1E-8" # p-value of the MI threshold (step 1 and bootstraps)
+  bootstrap:
+    n_boot: 100 # bootstraps per network
+    threads: 4 # threads of each bootstrap job
+  memory: # GB per job; lower them with --set-resources on a small computer
+    threshold_gb: 8
+    bootstrap_gb: 16
+    consolidate_gb: 8
+
+# Analysis of the networks (rules network_metrics, community_enrichment,
+# network_comparison, gene_rewiring). Same settings as the
+# Region-specific_co-expression-_network_rewiring_AD repository.
+network_analysis:
+  communities:
+    resolution: 1 # Leiden, modularity objective
+    seed: 2026 # Leiden is stochastic: fixed seed, same partition every run
+  community_enrichment:
+    min_community_size: 20 # smaller communities are not tested
+    min_size: 15 # smallest gene set (GO BP, Reactome)
+    max_size: 500 # largest gene set
+    padj: 0.05
+  rewiring:
+    min_degree: 5 # genes with >= 5 neighbors in the AD or the CT network
+    top_rewired: 0.10 # rewired genes = top 10% by adjusted rewiring
+    sensitivity: [0.05, 0.20] # same overlap test with these top fractions
+    n_perm: 1000 # permutations of the overlap test rewired x DEG
+    strata: 5 # bins of expression and of mean degree (5 x 5 strata)
+    seed: 2026
+
+# Figures of the networks
+network_figures:
+  collection: Reactome # GO_BP or Reactome: community enrichment figure
+  top_communities: 5 # largest communities of each network shown in that figure

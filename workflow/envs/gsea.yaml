@@ -1,0 +1,14 @@
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.4.3
+  - bioconductor-clusterprofiler=4.14.0 # gseGO (uses fgsea)
+  - bioconductor-reactomepa=1.50.0 # gsePathway
+  - bioconductor-reactome.db=1.89.0 # Reactome pathways, offline
+  - bioconductor-go.db=3.20.0 # GO terms, offline
+  - bioconductor-org.hs.eg.db=3.20.0 # gene IDs and GO annotation, offline
+  - r-dplyr=1.2.1
+  - r-tidyr=1.3.2
+  - r-readr=2.2.0

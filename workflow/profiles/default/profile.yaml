@@ -1,0 +1,4 @@
+software-deployment-method:
+  - conda
+printshellcmds: true
+rerun-incomplete: true

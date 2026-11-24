@@ -1,0 +1,6 @@
+region	study	tissue	covariates_tissue	batch_column
+DLPFC	ROSMAP	dorsolateral prefrontal cortex	DLPFC	final_batch
+HCN	ROSMAP	Head of caudate nucleus	ACC	final_batch
+PCC	ROSMAP	posterior cingulate cortex	PCC	final_batch
+TC	Mayo	temporal cortex	TCX	flowcell
+CRB	Mayo	cerebellum	CBE	flowcell

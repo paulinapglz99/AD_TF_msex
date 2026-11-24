@@ -1,0 +1,10 @@
+syn_id	version	category	study	filename	description
+syn22283382	4	data	ROSMAP	ROSMAP_batch1_gene_all_counts_matrix_clean.txt	ROSMAP raw gene counts, batch 1
+syn22301601	4	data	ROSMAP	ROSMAP_batch2_gene_all_counts_matrix_clean.txt	ROSMAP raw gene counts, batch 2
+syn22314230	4	data	ROSMAP	ROSMAP_batch3_gene_all_counts_matrix_clean.txt	ROSMAP raw gene counts, batch 3
+syn25817661	4	data	ROSMAP	ROSMAP_batch4_gene_all_counts_matrix_clean.txt	ROSMAP raw gene counts, batch 4
+syn21544635	1	data	Mayo	Mayo_gene_all_counts_matrix_clean.txt	Mayo raw gene counts
+syn27034471	2	metadata	ROSMAP	RNAseq_Harmonization_ROSMAP_combined_metadata.csv	ROSMAP combined sample, individual and assay metadata
+syn27000373	1	metadata	Mayo	RNAseq_Harmonization_Mayo_combined_metadata.csv	Mayo combined sample, individual and assay metadata
+syn29855598	2	metadata	ROSMAP	ROSMAP_Covariates_ages_censored.tsv	ROSMAP sample covariates from Sage, with harmonized diagnosis (ages 90+ censored)
+syn29855549	2	metadata	Mayo	Mayo_Covariates_ages_censored.tsv	Mayo sample covariates from Sage, with harmonized diagnosis (ages 90+ censored)
