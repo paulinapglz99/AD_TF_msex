@@ -75,7 +75,7 @@ En Mayo, el cerebelo aparece como `_CBE` en los IDs de las covariables y como `_
   proporción de mujeres y hombres; edad de muerte, PMI y RIN; y verificación del sexo con XIST y UTY.
 - `resources/annotation/ensembl106_genes.tsv`: % de GC y longitud de cada gen, de un *archive* fijo de
   Ensembl (106, abril 2022) con biomaRt.
-- `results/gc_normalize/{region}/`: corrección de GC y de longitud con EDASeq (dentro de cada muestra,
+- `results/gc_normalize/{region}/`: corrección de longitud y luego de GC con EDASeq (dentro de cada muestra,
   *full quantile*) y de tamaño de librería (cuartil superior), guardada como factores de normalización
   que usan `sample_qc`, `deseq2` y `network_qc`. `bias.tsv` tiene el diagnóstico de NOISeq (R² del sesgo
   de GC y de longitud de cada muestra) antes y después.
@@ -110,11 +110,15 @@ En Mayo, el cerebelo aparece como `_CBE` en los IDs de las covariables y como `_
   similitud entre sexos con AD menos en controles (> 0 convergencia, < 0 divergencia).
 - `results/network_analysis/{region}/gene_rewiring.tsv`: *rewiring* de cada gen por AD en mujeres y en
   hombres (ajustado por grado y expresión), y `rewiring_vs_de.tsv`: si los genes recableados son los DEGs.
-- `results/plots/main/networks_ad_by_sex.{pdf,jpeg}`: figura principal de redes. (a) índice de
-  convergencia/divergencia, (b) Jaccard de aristas AD vs CT en cada sexo, (c) recableados × DEGs,
-  (d) *rewiring* en mujeres contra hombres.
-- `results/plots/supplementary/networks_panel.{pdf,jpeg}`: topología de las 20 redes, los 6 pares de cada
-  región con todas las medidas y sensibilidad de recableados × DEGs (top 5%, 10% y 20%).
+- `results/network_analysis/{region}/rewiring_enrichment.tsv`: GO BP y Reactome de los genes recableados
+  solo en mujeres, solo en hombres y en ambos (universo: genes que pasan el filtro de grado en los dos sexos).
+- `results/plots/main/networks_ad_by_sex.{pdf,jpeg}`: figura principal de redes. (a) *rewiring* en mujeres
+  contra hombres, (b) recableados × DEGs, (c) función de los recableados en un solo sexo, (d) índice de
+  convergencia/divergencia, (e) Jaccard de aristas AD vs CT en cada sexo.
+- `results/plots/supplementary/network_topology_panel.{pdf,jpeg}`: topología de las 20 redes (métricas,
+  distribución de grado y aristas contra número de muestras).
+- `results/plots/supplementary/networks_panel.{pdf,jpeg}`: los 6 pares de cada región con todas las medidas y
+  sensibilidad de recableados × DEGs (top 5%, 10% y 20%).
 - `results/plots/supplementary/community_enrichment_panel.{pdf,jpeg}`: función principal de las comunidades
   más grandes de cada red.
 

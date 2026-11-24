@@ -3,9 +3,14 @@
 # 2.pre-promRNA script: EDASeq corrects, NOISeq diagnoses.
 #   1. Genes: Sage's filter (at least one group) with GC and length annotation.
 #   2. EDASeq, on the raw counts (all AD/CT samples of the region):
-#        within-lane GC correction (full quantile) ->
 #        within-lane length correction (full quantile) ->
+#        within-lane GC correction (full quantile) ->
 #        between-lane normalization (upper quartile, library size)
+#      Order: GC and length are correlated across genes (r ~ -0.47), so the
+#      correction done last brings back part of the other bias. Tested on TC
+#      (median NOISeq R^2, GC / length): uncorrected 0.36 / 0.66;
+#      GC -> length 0.63 / 0.04; length -> GC 0.17 / 0.25, the only order that
+#      lowers both.
 #   3. Normalization factors for DESeq2 (EDASeq's recommendation): the counts
 #      stay raw integers and the correction goes in normalizationFactors(), so
 #      deseq2, sample_qc and network_qc all use the same corrected scale.
@@ -66,9 +71,10 @@ gene_length <- setNames(gene_info$length, genes)
 
 # ---- EDASeq: GC, length and library size ------------------------------------
 
+# Length first, then GC (see the order note at the top)
 normalized <- counts %>%
-  withinLaneNormalization(gc, which = "full", round = FALSE) %>%
   withinLaneNormalization(gene_length, which = "full", round = FALSE) %>%
+  withinLaneNormalization(gc, which = "full", round = FALSE) %>%
   betweenLaneNormalization(which = "upper", round = FALSE)
 
 # Normalization factors for DESeq2: count / factor = corrected expression.

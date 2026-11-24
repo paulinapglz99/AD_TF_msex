@@ -126,6 +126,10 @@ network_analysis:
     min_size: 15 # smallest gene set (GO BP, Reactome)
     max_size: 500 # largest gene set
     padj: 0.05
+  rewiring_enrichment: # genes rewired in women only / men only / both
+    min_size: 15
+    max_size: 500
+    padj: 0.05
   rewiring:
     min_degree: 5 # genes with >= 5 neighbors in the AD or the CT network
     top_rewired: 0.10 # rewired genes = top 10% by adjusted rewiring
@@ -136,5 +140,6 @@ network_analysis:
 
 # Figures of the networks
 network_figures:
-  collection: Reactome # GO_BP or Reactome: community enrichment figure
+  collection: Reactome # GO_BP or Reactome: community enrichment and rewired-gene function
   top_communities: 5 # largest communities of each network shown in that figure
+  top_terms: 5 # main figure, panel c: terms per region and sex (lowered if they do not fit)

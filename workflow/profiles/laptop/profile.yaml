@@ -1,0 +1,49 @@
+# Profile for a computer with ~15 GB of RAM and 8 cores. Use it instead of the
+# default one with:  snakemake --workflow-profile workflow/profiles/laptop ...
+# Same as profiles/default, plus: total memory limit, lower ARACNe memory,
+# 4 cores, and keep going after a failed job.
+software-deployment-method:
+  - conda
+printshellcmds: true
+rerun-incomplete: true
+keep-going: true
+cores: 4
+resources:
+  mem_gb: 13 # never run jobs whose memory adds up to more than this
+
+default-resources:
+  mem_gb: 2
+set-resources:
+  plot_metadata:
+    mem_gb: 4 # reads the XIST/UTY rows of every count matrix
+  prepare_counts:
+    mem_gb: 4
+  gc_normalize:
+    mem_gb: 4
+  sample_qc:
+    mem_gb: 4
+  deseq2:
+    mem_gb: 6
+  pca_pre:
+    mem_gb: 4
+  network_qc:
+    mem_gb: 4
+  gsea:
+    mem_gb: 4 # loads the whole GO annotation
+  community_enrichment:
+    mem_gb: 4
+  rewiring_enrichment:
+    mem_gb: 4 # loads the whole GO annotation
+  network_metrics:
+    mem_gb: 4
+  network_comparison:
+    mem_gb: 6 # the 4 networks of a region at once
+  gene_rewiring:
+    mem_gb: 6
+  # ARACNe with less memory than config.yaml (16 GB per bootstrap)
+  aracne_threshold:
+    mem_gb: 8
+  aracne_bootstrap:
+    mem_gb: 12
+  aracne_consolidate:
+    mem_gb: 4

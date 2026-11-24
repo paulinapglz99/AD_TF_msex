@@ -2,3 +2,37 @@ software-deployment-method:
   - conda
 printshellcmds: true
 rerun-incomplete: true
+
+# Memory (GB) of each job. With `--resources mem_gb=<N>` Snakemake only runs at
+# the same time the jobs whose mem_gb adds up to N or less, so the computer does
+# not run out of memory. Every job counts: rules not listed here use the default.
+# ARACNe rules take their memory from config.yaml (aracne/memory).
+default-resources:
+  mem_gb: 2
+set-resources:
+  plot_metadata:
+    mem_gb: 4 # reads the XIST/UTY rows of every count matrix
+  prepare_counts:
+    mem_gb: 4
+  gc_normalize:
+    mem_gb: 4
+  sample_qc:
+    mem_gb: 4
+  deseq2:
+    mem_gb: 6
+  pca_pre:
+    mem_gb: 4
+  network_qc:
+    mem_gb: 4
+  gsea:
+    mem_gb: 4 # loads the whole GO annotation
+  community_enrichment:
+    mem_gb: 4
+  rewiring_enrichment:
+    mem_gb: 4 # loads the whole GO annotation
+  network_metrics:
+    mem_gb: 4
+  network_comparison:
+    mem_gb: 6 # the 4 networks of a region at once
+  gene_rewiring:
+    mem_gb: 6
