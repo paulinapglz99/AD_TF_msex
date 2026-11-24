@@ -31,8 +31,9 @@ en cinco regiones del cerebro, usando RNA-seq *bulk* post mortem de los estudios
 |---|---|---|
 | 1. Descarga | `download_synapse` ✅ | — |
 | 2. Gráficas de metadata | `plot_metadata` ✅ | `0.1plot_metadatas.R` |
-| 3. Separación por región y sexo | pendiente | `0.handle_data_and_metadata.R`, `3.stratify_by_sex.R` |
-| 4. Expresión diferencial | pendiente | `DEGS_local.R` (ROSMAP), `differential_exp_msex_Mayo.R` (Mayo), `make_IPA_tables.R` |
+| 3. Matriz de cada región (AD/CT, una muestra por individuo) | `prepare_counts` ✅ | `prepare_counts.R` |
+| 3b. Separación por sexo (redes) | pendiente | `3.stratify_by_sex.R` |
+| 4. Expresión diferencial | `pca_pre`, `plot_pca_pre`, `deseq2`, `gsea` ✅ | `pca_pre.R`, `plot_pca.R`, `deseq2.R`, `gsea.R` |
 | 5. Control de calidad | pendiente | `1.QC_pre_analysis_parallel.R`, `2.pre-promRNA_parallel.R` |
 | 6. Redes ARACNe-AP | pendiente | — |
 | 7. Topología de redes | pendiente | — |
@@ -72,6 +73,16 @@ En Mayo, el cerebelo aparece como `_CBE` en los IDs de las covariables y como `_
 
 - `results/plots/supplementary/metadata_panel.{pdf,jpeg}`: muestras por región, diagnóstico y sexo;
   proporción de mujeres y hombres; edad de muerte, PMI y RIN; y verificación del sexo con XIST y UTY.
+- `results/plots/supplementary/pca_pre_panel.{pdf,jpeg}`: PCA de cada región antes de corregir, y
+  varianza de cada PC explicada por cada covariable. Con él se eligieron las covariables de DESeq2.
+- `results/deseq2/{region}/`: un modelo de DESeq2 por región,
+  `~ model_batch + RIN + pct_intronic + pmi + age_death + group` (sin `model_batch` en Mayo), con
+  `group` = diagnóstico × sexo. Una tabla por contraste (`AD_vs_CT_female`, `AD_vs_CT_male`,
+  `sex_diagnosis_interaction`) y `summary.tsv` con los DEGs (padj < 0.05, |log2FC| ≥ log2(1.2)).
+  En la interacción solo se prueban los genes expresados en ambos sexos (columna `tested`); los genes
+  del cromosoma Y, XIST, etc. quedan con `padj = NA`.
+- `results/gsea/{region}/{contrast}.tsv`: GSEA de cada contraste (GO BP y Reactome), con los genes
+  ordenados por el estadístico de Wald. Se guardan todas las vías, significativas o no.
 
 Todas las gráficas toman colores, fuentes, tamaños y orden de los grupos de
 [`workflow/scripts/R/theme_pub.R`](workflow/scripts/R/theme_pub.R). Para cambiar el estilo de todas las

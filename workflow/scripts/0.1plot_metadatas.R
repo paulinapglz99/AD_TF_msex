@@ -128,7 +128,7 @@ covariates_long <- covariates %>%
   pivot_longer(c(age_death, pmi, RIN), names_to = "variable", values_to = "value") %>%
   mutate(variable = factor(variable,
                            levels = c("age_death", "pmi", "RIN"),
-                           labels = c("Age at death (years)", "PMI (hours)", "RIN")))
+                           labels = label_variable(c("age_death", "pmi", "RIN"), units = TRUE)))
 
 p_covariates <- ggplot(covariates_long, aes(diagnosis, value, fill = sex)) +
   geom_violin(position = position_dodge(width = 0.85), scale = "width",

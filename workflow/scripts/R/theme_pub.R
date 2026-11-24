@@ -45,6 +45,37 @@ DX_AXIS_LABELS <- c(CT = "CT", AD = "AD") # short, for narrow axes
 SEX_ORDER <- c("female", "male")
 SEX_LABELS <- c(female = "Female", male = "Male")
 AGE_ORDER <- c("<80", "80-89", "90+")
+
+# How each variable (column name) is written in plots
+VARIABLE_LABELS <- c(
+  diagnosis = "Diagnosis",
+  sex = "Sex",
+  region = "Region",
+  study = "Study",
+  protocol = "Protocol",
+  batch = "Batch",
+  model_batch = "Model batch",
+  RIN = "RIN",
+  pmi = "PMI",
+  age_death = "Age at death",
+  apoe4_allele = "APOE4 alleles",
+  pct_aligned = "% aligned reads",
+  pct_intronic = "% intronic bases",
+  pct_intergenic = "% intergenic bases",
+  pct_coding = "% coding bases"
+)
+VARIABLE_UNITS <- c(age_death = "years", pmi = "hours")
+
+# Label of a variable, optionally with its units: "Age at death (years)".
+# Variables missing from the dictionary keep their column name.
+label_variable <- function(x, units = FALSE) {
+  label <- coalesce(unname(VARIABLE_LABELS[x]), x)
+  if (units) {
+    unit <- unname(VARIABLE_UNITS[x])
+    label <- if_else(is.na(unit), label, paste0(label, " (", unit, ")"))
+  }
+  label
+}
 APOE_ORDER <- c("0", "1", "2")
 
 
@@ -59,6 +90,10 @@ NPG <- c(
 # Pairs chosen to stay distinguishable with color blindness
 COL_DX <- c(CT = NPG[["blue"]], AD = NPG[["red"]])
 COL_SEX <- c(female = NPG[["green"]], male = "#D9772B") # orange (not in NPG)
+
+# When color is already used (e.g. for diagnosis), sex is shown by shape and line
+SHAPE_SEX <- c(female = 16, male = 17) # filled circle, filled triangle
+LINETYPE_SEX <- c(female = "solid", male = "dashed")
 
 # Ordered categories: light -> dark tints of one NPG hue
 COL_AGE <- c("#9AA5C8", "#6676A8", "#3C5488") # NPG blue
@@ -107,6 +142,13 @@ scale_colour_dx <- function(...) {
 }
 scale_fill_sex <- function(...) {
   scale_fill_manual(values = COL_SEX, labels = SEX_LABELS, name = "Sex", ...)
+}
+# Same name and labels, so ggplot merges shape and linetype into one legend
+scale_shape_sex <- function(...) {
+  scale_shape_manual(values = SHAPE_SEX, labels = SEX_LABELS, name = "Sex", ...)
+}
+scale_linetype_sex <- function(...) {
+  scale_linetype_manual(values = LINETYPE_SEX, labels = SEX_LABELS, name = "Sex", ...)
 }
 scale_fill_age <- function(...) {
   scale_fill_manual(values = COL_AGE, name = "Years", drop = FALSE, ...)

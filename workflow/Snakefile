@@ -23,9 +23,42 @@ REGIONS = pd.read_csv(config["samples"], sep="\t", dtype=str).set_index(
 FILES = pd.read_csv(config["synapse_files"], sep="\t", dtype=str)
 
 
+def counts_of(wildcards):
+    """Raw count matrices of the region's study (4 batches for ROSMAP, 1 for Mayo)"""
+    study = REGIONS.loc[wildcards.region, "study"]
+    files = FILES.loc[
+        (FILES["category"] == "data") & (FILES["study"] == study), "filename"
+    ]
+    return expand("resources/data/{filename}", filename=files)
+
+
+def covariates_of(wildcards):
+    """Sage's covariates (with the harmonized diagnosis) of the region's study"""
+    study = REGIONS.loc[wildcards.region, "study"]
+    return f"resources/metadata/{study}_Covariates_ages_censored.tsv"
+
+
+def deseq2_covariates_of(wildcards):
+    """Covariates of the DESeq2 model for the region's study (config.yaml)"""
+    study = REGIONS.loc[wildcards.region, "study"]
+    return config["deseq2"]["covariates"][study]
+
+
+# Names of the DESeq2 contrasts, e.g. AD_vs_CT_female
+CONTRASTS = list(config["deseq2"]["contrasts"])
+
+
+def metadata_of(wildcards):
+    """Original metadata of the region's study (library prep, kit, read length)"""
+    study = REGIONS.loc[wildcards.region, "study"]
+    return f"resources/metadata/RNAseq_Harmonization_{study}_combined_metadata.csv"
+
+
 wildcard_constraints:
     category="|".join(sorted(set(FILES["category"]))),
     filename=r"[^/]+",
+    region="|".join(REGIONS.index),
+    contrast="|".join(CONTRASTS),
 
 
 rule all:
@@ -38,6 +71,13 @@ rule all:
             filename=FILES["filename"],
         ),
         "results/plots/supplementary/metadata_panel.pdf",
+        "results/plots/supplementary/pca_pre_panel.pdf",
+        collect("results/deseq2/{region}/summary.tsv", region=REGIONS.index),
+        collect(
+            "results/gsea/{region}/{contrast}.tsv",
+            region=REGIONS.index,
+            contrast=CONTRASTS,
+        ),
 
 
 # ---- 1. Download count matrices and metadata from Synapse -------------------
@@ -92,3 +132,124 @@ rule plot_metadata:
         diagnoses=config["diagnoses"],
     script:
         "scripts/0.1plot_metadatas.R"
+
+
+# ---- 3. Count matrix of each region -----------------------------------------
+
+
+# AD/CT samples of one region, one per individual, with their raw counts.
+# Shared by the differential expression and the network branches.
+rule prepare_counts:
+    input:
+        counts=counts_of,
+        covariates=covariates_of,
+        metadata=metadata_of,
+        regions=config["samples"],
+    output:
+        counts="results/counts/{region}/counts.rds",
+        samples="results/counts/{region}/samples.tsv",
+    log:
+        "logs/prepare_counts/{region}.log",
+    conda:
+        "envs/r_tidy.yaml"
+    params:
+        diagnoses=config["diagnoses"],
+        min_batch_size=config["min_batch_size"],
+    script:
+        "scripts/prepare_counts.R"
+
+
+# ---- 4. Differential expression ---------------------------------------------
+
+
+# PCA of each region before any correction, and variance of each PC explained
+# by each covariate, to choose the covariates of the DESeq2 model (tables only)
+rule pca_pre:
+    input:
+        counts="results/counts/{region}/counts.rds",
+        samples="results/counts/{region}/samples.tsv",
+        gene_filter="workflow/scripts/R/gene_filter.R",
+    output:
+        scores="results/pca_pre/{region}/scores.tsv",
+        variance="results/pca_pre/{region}/variance.tsv",
+        association="results/pca_pre/{region}/covariate_association.tsv",
+    log:
+        "logs/pca_pre/{region}.log",
+    conda:
+        "envs/deseq2.yaml"
+    params:
+        min_cpm=config["gene_filter"]["min_cpm"],
+        min_fraction=config["gene_filter"]["min_fraction"],
+        top_genes=config["pca"]["top_genes"],
+        n_pcs=config["pca"]["n_pcs"],
+        covariates=config["pca"]["covariates"],
+    script:
+        "scripts/pca_pre.R"
+
+
+# Supplementary panel with the PCA of every region, one row per region
+rule plot_pca_pre:
+    input:
+        scores=collect("results/pca_pre/{region}/scores.tsv", region=REGIONS.index),
+        variance=collect("results/pca_pre/{region}/variance.tsv", region=REGIONS.index),
+        association=collect(
+            "results/pca_pre/{region}/covariate_association.tsv", region=REGIONS.index
+        ),
+        regions=config["samples"],
+        theme="workflow/scripts/R/theme_pub.R",
+    output:
+        pdf="results/plots/supplementary/pca_pre_panel.pdf",
+        jpeg="results/plots/supplementary/pca_pre_panel.jpeg",
+    log:
+        "logs/plot_pca_pre.log",
+    conda:
+        "envs/plots_r.yaml"
+    params:
+        covariates=config["pca"]["covariates"],
+    script:
+        "scripts/plot_pca.R"
+
+
+# One DESeq2 model per region (~ covariates + group, group = diagnosis_sex);
+# every contrast of config.yaml comes from that same fit
+rule deseq2:
+    input:
+        counts="results/counts/{region}/counts.rds",
+        samples="results/counts/{region}/samples.tsv",
+        gene_filter="workflow/scripts/R/gene_filter.R",
+    output:
+        dds="results/deseq2/{region}/dds.rds",
+        tables=expand("results/deseq2/{{region}}/{contrast}.tsv", contrast=CONTRASTS),
+        summary="results/deseq2/{region}/summary.tsv",
+    log:
+        "logs/deseq2/{region}.log",
+    conda:
+        "envs/deseq2.yaml"
+    threads: 4
+    params:
+        covariates=deseq2_covariates_of,
+        contrasts=config["deseq2"]["contrasts"],
+        padj=config["deseq2"]["padj"],
+        log2fc=config["deseq2"]["log2fc"],
+        min_cpm=config["gene_filter"]["min_cpm"],
+        min_fraction=config["gene_filter"]["min_fraction"],
+    script:
+        "scripts/deseq2.R"
+
+
+# GSEA of one DESeq2 contrast: GO biological process and Reactome
+rule gsea:
+    input:
+        table="results/deseq2/{region}/{contrast}.tsv",
+    output:
+        "results/gsea/{region}/{contrast}.tsv",
+    log:
+        "logs/gsea/{region}/{contrast}.log",
+    conda:
+        "envs/gsea.yaml"
+    params:
+        min_size=config["gsea"]["min_size"],
+        max_size=config["gsea"]["max_size"],
+        seed=config["gsea"]["seed"],
+    script:
+        "scripts/gsea.R"
