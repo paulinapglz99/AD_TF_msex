@@ -1,2 +1,0 @@
-"ensembl_gene_id","baseMean","log2FoldChange","lfcSE","stat","pvalue","padj","diffexpressed","external_gene_name","baseMean_female_control","baseMean_female_AD","baseMean_male_control","baseMean_male_AD","delabel"
-"ENSG00000280800",350.347161177074,-7.97285835919963,1.26542739030645,-6.3005261465605,2.96636964840629e-10,1.62651980561414e-05,"DOWN",NA,64.7366421790522,513.05557305034,535.101898219575,199.4360339769,NA

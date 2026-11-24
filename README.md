@@ -37,11 +37,10 @@ en cinco regiones del cerebro, usando RNA-seq *bulk* post mortem de los estudios
 | 6. Redes ARACNe-AP (todos los genes como reguladores) | `install_aracne`, `aracne_regulators`, `aracne_threshold`, `aracne_bootstrap`, `aracne_consolidate` ✅ | — |
 | 7. Análisis de redes | `network_metrics`, `community_enrichment`, `network_comparison`, `gene_rewiring` ✅ | `network_metrics.R`, `community_enrichment.R`, `network_comparison.R`, `gene_rewiring.R` |
 
-Los scripts de `workflow/scripts/` que no aparecen en esta tabla son análisis anteriores (módulos y genes
-exclusivos por sexo, intersección de DEGs, gráficas globales, preprocesamiento viejo); todavía leen y
-escriben rutas fijas de servidor (`/STORAGE`, `/datos`) o usan argumentos de línea de comandos.
-`deseq_2_sex_DEGS/` es un análisis de expresión diferencial de Mayo hecho por separado, con su propio
-Snakefile. Los scripts viejos de expresión diferencial se borraron; siguen en el historial de git.
+Los análisis anteriores al pipeline (preprocesamiento viejo, módulos y genes exclusivos por sexo,
+intersección de DEGs, gráficas globales, tablas de IPA y la carpeta `deseq_2_sex_DEGS/` con el análisis de
+expresión diferencial de Mayo) se borraron del repositorio; siguen en el historial de git, por ejemplo en el
+commit `fe9b8a4`.
 
 ## Datos
 

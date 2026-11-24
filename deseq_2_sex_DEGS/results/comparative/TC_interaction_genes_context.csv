@@ -1,2 +1,0 @@
-"ensembl_gene_id","external_gene_name","lfc_interaction","padj_interaction","diffexpressed","lfc_male","padj_male","lfc_female","padj_female","tissue","interpretation"
-"ENSG00000280800","ENSG00000280800",-7.97285835919963,1.62651980561414e-05,"DOWN",NA,NA,0.116960031256736,0.950195567036764,"TC","Stronger UP in females"
