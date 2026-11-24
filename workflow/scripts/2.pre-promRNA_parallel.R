@@ -8,6 +8,9 @@
 
 #Here we use the NOISeq, edgeR and EDAseq packages for bias detection and correction
 
+#BiocManager::install("sva")
+#BiocManager::install("EDASeq")
+
 pacman::p_load('tidyverse', 
                'biomaRt',
                'NOISeq',
@@ -21,11 +24,13 @@ pacman::p_load('tidyverse',
 args <- commandArgs(trailingOnly = TRUE)
 counts <- args[1]
 metadata <- args[2]
+counts <- "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/DLFPC/full_counts/ROSMAP_RNAseq_rawcounts_DLPFC.rds"
+metadata <- "/datos/rosmap/data_by_counts/ROSMAP_counts/counts_by_tissue/metadata/DLPFC/RNA_seq_metadata_DLPFC.txt"
 
-# Read RDS counts
+#Read RDS counts
 counts <- readRDS(counts)
 
-# Read metadata
+#Read metadata
 metadata <- vroom(metadata)
 
 #Seed --- ---
@@ -135,7 +140,9 @@ names(metadata) <- ifelse(names(metadata) == "msex", "sex", names(metadata))
 #Exclude specimens by metadata
 
 metadata <- metadata %>% filter(exclude == FALSE)
+metadata <- metadata[metadata$sequencingBatch %in%  names(which(table(metadata$sequencingBatch) > 1)), ]
 metadata <- metadata %>% filter(if_all(c(ceradsc, sex), ~ !is.na(.)))
+table(metadata$sequencingBatch)
 dim(metadata)
 
 #Fix counts
@@ -171,7 +178,12 @@ factors <- data.frame("specimenID" = colnames(counts))
 #Left join with metadata
  
 factors <- factors %>% left_join(metadata, by = "specimenID") %>%
-  dplyr::select(c(specimenID, ceradsc, sex, sequencingBatch))
+  dplyr::select(c(specimenID, 
+                  ceradsc, 
+                  sex, 
+                  pmi, 
+                  RIN,
+                  sequencingBatch))
 dim(factors)
 
 #Filter again counts
@@ -184,8 +196,9 @@ dim(counts)
 cat("Annotation with ensembl\n")
 
 #Generate mart object
-
-mart <- useEnsembl("ensembl", dataset="hsapiens_gene_ensembl")
+mart <- useEnsembl("ensembl", dataset="hsapiens_gene_ensembl", mirror = "useast", 
+                   version = 110)
+#mart <- useEnsembl("ensembl", dataset="hsapiens_gene_ensembl")
 
 #We create myannot, with GC content, biotype, info for length & names per transcript
 
@@ -195,6 +208,9 @@ myannot <- getBM(attributes = c("ensembl_gene_id",
                  filters = "ensembl_gene_id", 
                  values =  rownames(counts),  #annotate the genes in the count matrix 
                  mart = mart)
+
+message("myannot table \n", 
+                paste(capture.output(table(myannot$percentage_gene_gc_content, useNA = "ifany")), collapse = "\n"))
 
 #to have control
 colnames(myannot)[colnames(myannot) == "ensembl_gene_id"] <- "feature"
@@ -236,17 +252,17 @@ cat(" Diagnostic of data\n")
 #If the median of M values for each comparison is not in the CI, the deviation
 # of the sample is significant, therefore, normalization is needed 
 #"cd" means "Cumulative Distribution."
-cat("My cd, slow process \n")
+#cat("My cd, slow process \n")
 
-mycd <- dat(noiseqData, type = "cd", norm = F) #slow
+#mycd <- dat(noiseqData, type = "cd", norm = F) #slow
 
 #[1] "Warning: 6321 features with 0 counts in all samples are to be removed for this analysis."
 #[1] "Reference sample is: 01_120405"
 
 #[1] "Diagnostic test: FAILED. Normalization is required to correct this bias."
 
-cat("NOIseq Diagnostic test\n")
-table(mycd@dat$DiagnosticTest[,  "Diagnostic Test"])
+#cat("NOIseq Diagnostic test\n")
+#table(mycd@dat$DiagnosticTest[,  "Diagnostic Test"])
 
 #1)check expression bias for counts
 #This object contains the count distribution for each biological group and also the 
@@ -265,7 +281,7 @@ cat("Counts Original plot\n")
 png("CountsOri.png")
 explo.plot(mycountsbio,
            plottype = "boxplot", #type of plot
-           samples = 1:20)  #only showing the first 15 samples
+           samples = 1:12)  #only showing the first 15 samples
 dev.off()
 
 #2)check for low count genes
@@ -273,7 +289,7 @@ cat("Low counts original plot\n")
 png("lowcountsOri.png")
 explo.plot(mycountsbio,
            plottype = "barplot",
-           samples = 1:20)
+           samples = 1:12)
 dev.off()
 
 #3)check for transcript composition bias
@@ -281,9 +297,9 @@ dev.off()
 #Plot for Mvalues
 cat("Mvalues Original plot\n")
 
-png("MvaluesOri.png")
-explo.plot(mycd,samples=sample(1:100,10))
-dev.off()
+# png("MvaluesOri.png")
+# explo.plot(mycd,samples=sample(1:100,10))
+# dev.off()
 
 #4)check for length & GC bias
 
@@ -299,7 +315,7 @@ myGCcontent <- dat(noiseqData,
 cat("GC bias original plot")
 png("GCbiasOri.png",width=1000)
 explo.plot(myGCcontent,
-           samples = 1:20,   
+           samples = 1:12,   
            toplot = "global")
 dev.off()
 
@@ -318,7 +334,7 @@ mylengthbias <- dat(noiseqData,
 cat("Length bias original plot\n")
 png("lengthbiasOri.png", width=1000)
 explo.plot(mylengthbias, 
-           samples = 1:20, 
+           samples = 1:12, 
            toplot = "global")
 dev.off()
 
@@ -329,7 +345,7 @@ cat("PCA pre-QC\n")
 pca.pre <- pca(counts, factors, title = "PCA Scatterplot coloured by sequencing batch - preQC", 
                save_plot = TRUE, filename = "PCA_plot_preQC.png")
 
-# Acceder al gráfico y mostrarlo si es necesario
+#Get plot
 png("pca_preqc.png")
 pca.pre$plot
 dev.off()
@@ -358,8 +374,6 @@ dim(countMatrixFiltered)
 #Create new annotation with filtered matrix
 
 myannot <- myannot %>% filter(feature %in% rownames(countMatrixFiltered))
-dim(myannot)
-
 myannot <- myannot[!duplicated(myannot$feature), ]
 dim(myannot)
 
@@ -374,11 +388,23 @@ featureData <-  data.frame("feature" = rownames(countMatrixFiltered)) %>%
   left_join(myannot, by = "feature")  %>% column_to_rownames(var = "feature")
 dim(featureData)
 
+message("FeatureData columns")
+print(colnames(featureData))
+
+#sum(is.na(featureData$GC))
+#sum(is.nan(featureData$GC))
+
+message(paste("featureData GC table \n", 
+              paste(capture.output(table(featureData$percentage_gene_gc_content, useNA = "ifany")), 
+                    collapse = "\n")))
+
 #Pheno data
 cat("Pheno data")
 phenoData <- data.frame("specimenID" = colnames(countMatrixFiltered)) %>% 
   left_join(factors, by = "specimenID") %>% column_to_rownames(var = "specimenID")
 dim(phenoData)
+
+print(colnames(phenoData))
 
 ##Create EDA object --- --
 cat("EDA object")
@@ -394,11 +420,11 @@ mydataEDA <- newSeqExpressionSet(
 #order for less bias
 
 #for gc content
-cat("Correct GC% bias")
+#cat("Correct GC% bias")
 gcFull <- withinLaneNormalization(mydataEDA, 
                                   "percentage_gene_gc_content",
                                   which = "full")#corrects GC bias 
-# 
+ 
 # #for length
 # lFull <- withinLaneNormalization(gcFull, 
 #                                  "length", 
@@ -459,7 +485,7 @@ cat("Counts final plot")
 png("CountsFinal.png")
 explo.plot(mycountsbio_final,
            plottype = "boxplot",
-           samples = 1:20)
+           samples = 1:12)
 dev.off()
 
 #Low counts 
@@ -467,7 +493,7 @@ cat("Low counts final plot")
 png("lowcountsFinal.png")
 explo.plot(mycountsbio_final,
            plottype = "barplot",
-           samples = 1:20)
+           samples = 1:12)
 dev.off()
 
 #Plot for Mvalues
