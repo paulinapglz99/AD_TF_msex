@@ -3,6 +3,8 @@
 #   ~ <covariates> + group,   group = diagnosis_sex (CT_female, CT_male, AD_female, AD_male)
 # and every contrast of config.yaml is taken from that same fit, so they share
 # samples, genes, covariates and dispersions and can be compared.
+# Normalization: the GC/length factors of gc_normalize (EDASeq), not DESeq2's
+# size factors.
 # Each contrast gives a weight per group (numerator +1, denominator -1), e.g.
 #   AD_vs_CT_female            AD_female - CT_female
 #   sex_diagnosis_interaction  (AD_female - CT_female) - (AD_male - CT_male)
@@ -25,6 +27,7 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(readr)
   source(snakemake@input[["gene_filter"]])
+  source(snakemake@input[["expression_utils"]])
 })
 
 region_name <- snakemake@wildcards[["region"]]
@@ -70,8 +73,14 @@ count_matrix <- round(count_matrix[, samples$specimenID])
 min_cpm <- snakemake@params[["min_cpm"]]
 min_fraction <- snakemake@params[["min_fraction"]]
 
-keep <- filter_genes(count_matrix, samples, min_cpm, min_fraction)
-cat("\nGenes passing the filter:", sum(keep), "of", length(keep), "\n")
+# GC/length normalization factors (gc_normalize): only genes with GC and
+# length annotation have them, so the model uses those genes only
+factors <- readRDS(snakemake@input[["factors"]])
+
+passes <- filter_genes(count_matrix, samples, min_cpm, min_fraction)
+keep <- passes & rownames(count_matrix) %in% rownames(factors)
+cat("\nGenes passing the filter:", sum(passes), "of", length(passes),
+    "| with GC/length correction (kept):", sum(keep), "\n")
 
 # Genes expressed in at least one group of each sex. In contrasts that compare
 # women with men (the interaction) only these genes are tested: for genes
@@ -84,6 +93,9 @@ both_sexes <- expressed_in_both_sexes(count_matrix, samples, min_cpm, min_fracti
 dds <- DESeqDataSetFromMatrix(count_matrix[keep, ],
                               colData = tibble::column_to_rownames(samples, "specimenID"),
                               design = design)
+# GC/length correction: gene x sample normalization factors replace DESeq2's
+# size factors (DESeq() then skips estimateSizeFactors)
+normalizationFactors(dds) <- normalization_factors_for(factors, rownames(dds), colnames(dds))
 dds <- DESeq(dds, parallel = threads > 1, BPPARAM = MulticoreParam(threads))
 saveRDS(dds, snakemake@output[["dds"]])
 

@@ -1,0 +1,9 @@
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.4.3
+  - bioconductor-biomart=2.62.0 # gene annotation from a fixed Ensembl archive
+  - r-dplyr=1.2.1
+  - r-readr=2.2.0

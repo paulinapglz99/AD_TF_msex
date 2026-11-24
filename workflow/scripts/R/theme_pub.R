@@ -62,8 +62,28 @@ VARIABLE_LABELS <- c(
   pct_aligned = "% aligned reads",
   pct_intronic = "% intronic bases",
   pct_intergenic = "% intergenic bases",
-  pct_coding = "% coding bases"
+  pct_coding = "% coding bases",
+  # network comparisons and topology
+  edge_jaccard = "Edge Jaccard",
+  node_jaccard = "Node Jaccard",
+  degree_spearman = "Degree ρ",
+  community_nmi = "Community NMI",
+  n_edges = "Edges",
+  density = "Density",
+  degree_mean = "Mean degree",
+  clustering_global = "Clustering",
+  modularity = "Modularity",
+  n_communities = "Communities"
 )
+
+# Groups of samples (diagnosis x sex), short labels for axes and pairs
+GROUP_ORDER <- c("CT_female", "AD_female", "CT_male", "AD_male")
+GROUP_LABELS <- c(CT_female = "F-CT", AD_female = "F-AD", CT_male = "M-CT", AD_male = "M-AD")
+
+# "AD_female vs CT_female" -> "F-AD vs F-CT"
+label_pair <- function(x, y) {
+  paste(GROUP_LABELS[x], "vs", GROUP_LABELS[y])
+}
 VARIABLE_UNITS <- c(age_death = "years", pmi = "hours")
 
 # Label of a variable, optionally with its units: "Age at death (years)".
@@ -95,6 +115,21 @@ COL_SEX <- c(female = NPG[["green"]], male = "#D9772B") # orange (not in NPG)
 SHAPE_SEX <- c(female = 16, male = 17) # filled circle, filled triangle
 LINETYPE_SEX <- c(female = "solid", male = "dashed")
 
+# Where an effect is significant: in women only, in men only, in both, or in neither
+SHARED_ORDER <- c("none", "female", "male", "both")
+SHARED_LABELS <- c(none = "Neither", female = "Women only", male = "Men only", both = "Both")
+COL_SHARED <- c(none = "grey85", female = NPG[["green"]], male = "#D9772B", both = INK)
+
+# Diverging scale for effects (log2FC, NES): down = blue, up = red
+COL_DOWN <- NPG[["blue"]]
+COL_UP <- NPG[["red"]]
+
+# Direction of a gene in a DESeq2 contrast (column 'direction' of the tables)
+DIRECTION_ORDER <- c("ns", "not_tested", "down", "up")
+DIRECTION_LABELS <- c(ns = "Not significant", not_tested = "Not tested (one sex only)",
+                      down = "Down in AD", up = "Up in AD")
+COL_DIRECTION <- c(ns = "grey80", not_tested = INK, down = COL_DOWN, up = COL_UP)
+
 # Ordered categories: light -> dark tints of one NPG hue
 COL_AGE <- c("#9AA5C8", "#6676A8", "#3C5488") # NPG blue
 COL_APOE <- c("#66C2A8", "#00957A", "#00513F") # NPG green
@@ -105,6 +140,12 @@ COL_REGION <- c(
   DLPFC = NPG[["cyan"]], HCN = NPG[["green"]], PCC = NPG[["lavender"]],
   TC = NPG[["salmon"]], CRB = NPG[["brown"]]
 )
+
+
+# Long names (pathways...) cut to n characters, with an ellipsis
+shorten <- function(x, n) {
+  if_else(nchar(x) > n, paste0(substr(x, 1, n - 1), "…"), x)
+}
 
 
 # ---- Theme -------------------------------------------------------------------
@@ -149,6 +190,24 @@ scale_shape_sex <- function(...) {
 }
 scale_linetype_sex <- function(...) {
   scale_linetype_manual(values = LINETYPE_SEX, labels = SEX_LABELS, name = "Sex", ...)
+}
+scale_colour_shared <- function(name = "Significant in", ...) {
+  scale_colour_manual(values = COL_SHARED, labels = SHARED_LABELS,
+                      name = name, drop = FALSE, ...)
+}
+# Effects centered at 0; limits symmetric so 0 is always white
+scale_colour_effect <- function(name, limit, ...) {
+  scale_colour_gradient2(low = COL_DOWN, mid = "white", high = COL_UP, midpoint = 0,
+                         limits = c(-limit, limit), oob = scales::squish, name = name, ...)
+}
+scale_fill_effect <- function(name, limit, ...) {
+  scale_fill_gradient2(low = COL_DOWN, mid = "white", high = COL_UP, midpoint = 0,
+                       limits = c(-limit, limit), oob = scales::squish, name = name, ...)
+}
+# `labels` can be changed, e.g. for the interaction ("larger in women")
+scale_colour_direction <- function(labels = DIRECTION_LABELS, ...) {
+  scale_colour_manual(values = COL_DIRECTION, labels = labels, name = NULL,
+                      drop = TRUE, ...)
 }
 scale_fill_age <- function(...) {
   scale_fill_manual(values = COL_AGE, name = "Years", drop = FALSE, ...)
